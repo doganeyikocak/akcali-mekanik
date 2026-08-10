@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#17324D">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Akçalı Mekanik">
+  <meta name="format-detection" content="telephone=no">
+  <title>Akçalı Mekanik</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="app-header">
+  <div>
+    <h1>Akçalı Mekanik</h1>
+    <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
+  </div>
+  <span id="versionLabel" class="version">v2.0</span>
+</header>
+
+<main class="container">
+  <section id="iosInstallCard" class="install-card" hidden>
+    <strong>📱 iPhone'a bir kez kur</strong>
+    <p>Safari'de <b>Paylaş</b> → <b>Ana Ekrana Ekle</b> → <b>Ekle</b>.</p>
+    <button id="hideInstallCard" class="small-btn">Anladım</button>
+  </section>
+
+  <section id="homeView" class="view active">
+    <button class="home-btn primary" data-go="newView">
+      <span class="icon">➕</span><span>YENİ HATA</span>
+    </button>
+
+    <button class="home-btn" data-go="pendingView">
+      <span class="icon">📤</span><span>GÖNDERİLMEMİŞ</span>
+      <strong id="pendingBadge" class="badge">0</strong>
+    </button>
+
+    <button id="syncBtn" class="home-btn success">
+      <span class="icon">🔄</span><span>SENKRONİZE ET</span>
+    </button>
+
+    <button class="home-btn" data-go="recordsView">
+      <span class="icon">📋</span><span>TELEFONDAKİ KAYITLAR</span>
+    </button>
+
+    <button class="home-btn secondary" data-go="settingsView">
+      <span class="icon">⚙️</span><span>AYARLAR</span>
+    </button>
+  </section>
+
+  <section id="newView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <h2>Yeni Hata</h2>
+    </div>
+
+    <form id="issueForm">
+      <label>Blok</label>
+      <div id="blockChoices" class="choice-grid"></div>
+
+      <label>Kat</label>
+      <div id="floorChoices" class="choice-grid"></div>
+
+      <label for="locationInput">Mahal / Daire / Şaft</label>
+      <input id="locationInput" type="text" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
+
+      <label>Hata Türü</label>
+      <div id="issueChoices" class="choice-grid"></div>
+
+      <label for="contractorSelect">Taşeron</label>
+      <select id="contractorSelect" required></select>
+
+      <label for="foremanSelect">Formen</label>
+      <select id="foremanSelect" required></select>
+
+      <label for="noteInput">Kısa Açıklama <span class="optional">(isteğe bağlı)</span></label>
+      <textarea id="noteInput" rows="3" placeholder="Örn: Pis su hattı ters eğimli"></textarea>
+      <button id="voiceBtn" type="button" class="voice-btn">🎙️ SESLE YAZ</button>
+
+      <label>Fotoğraf</label>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" required>
+      <img id="photoPreview" class="photo-preview" hidden alt="Fotoğraf önizleme">
+
+      <button type="submit" class="submit-btn">✅ KAYDET</button>
+    </form>
+  </section>
+
+  <section id="pendingView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <h2>Gönderilmemiş</h2>
+    </div>
+    <div id="pendingList" class="card-list"></div>
+    <button id="pendingSyncBtn" class="submit-btn">🔄 ŞİMDİ SENKRONİZE ET</button>
+  </section>
+
+  <section id="recordsView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <h2>Telefondaki Kayıtlar</h2>
+    </div>
+    <div id="recordsList" class="card-list"></div>
+  </section>
+
+  <section id="settingsView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <h2>Ayarlar</h2>
+    </div>
+
+    <label for="deviceName">Bu telefon / kullanıcı</label>
+    <input id="deviceName" type="text" placeholder="Örn: Ahmet Formen">
+
+    <label for="apiUrl">Bulut bağlantısı</label>
+    <input id="apiUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+
+    <div class="settings-actions">
+      <button id="testApiBtn" type="button" class="small-action">🔌 BAĞLANTIYI TEST ET</button>
+      <button id="refreshConfigBtn" type="button" class="small-action">↻ LİSTELERİ GÜNCELLE</button>
+    </div>
+
+    <p id="apiTestResult" class="help">Bulut bağlantısı boşsa kayıtlar yalnızca telefonda kalır.</p>
+
+    <button id="saveSettingsBtn" class="submit-btn">💾 AYARLARI KAYDET</button>
+    <button id="exportBtn" class="submit-btn secondary-action">⬇️ CSV YEDEĞİ AL</button>
+    <button id="purgeSyncedBtn" class="submit-btn danger-action">🧹 GÖNDERİLMİŞ KAYITLARI TELEFONDAN TEMİZLE</button>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+</main>
+<script src="./app.js"></script>
+</body>
+</html>
