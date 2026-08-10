@@ -1,4 +1,4 @@
-const APP_VERSION="3.3.0";
+const APP_VERSION="3.4.0";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
   floors:["B2","B1","Zemin","1. Kat","2. Kat","3. Kat","4. Kat","5. Kat","Çatı"],
@@ -10,10 +10,10 @@ const DB_NAME="akcali-mekanik-db",DB_VERSION=1,STORE="issues";
 let db=null,currentConfig=loadCachedConfig(),selectedPhotoData="",syncRunning=false;
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v3.3";
+  document.getElementById("versionLabel").textContent="v3.4";
   await openDb();
   await requestPersistentStorage();
-  bindNavigation();bindForm();bindButtons();loadSettings();renderSelects();
+  bindNavigation();bindForm();bindButtons();bindKeyboardDismiss();loadSettings();renderSelects();
   updateConnectionStatus();showIosInstallHint();await refreshCounts();await renderLists();registerServiceWorker();
   if(navigator.onLine){refreshRemoteConfig().catch(()=>{});syncPending().catch(()=>{});}
   window.addEventListener("online",async()=>{updateConnectionStatus();showToast("İnternet geldi. Gönderimler kontrol ediliyor.");await refreshRemoteConfig().catch(()=>{});await syncPending();});
@@ -23,47 +23,61 @@ document.addEventListener("DOMContentLoaded",async()=>{
 function isIos(){return /iphone|ipad|ipod/i.test(navigator.userAgent);}
 function isStandalone(){return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
 function showIosInstallHint(){const card=document.getElementById("iosInstallCard");if(isIos()&&!isStandalone()&&localStorage.getItem("hideIosInstall")!=="1")card.hidden=false;}
-async function registerServiceWorker(){
-  if(!("serviceWorker" in navigator))return;
-  try{
-    const reg=await navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"});
-    let reloading=false;
+function registerServiceWorker(){if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.error);}
+async function requestPersistentStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(_){}}
 
-    navigator.serviceWorker.addEventListener("controllerchange",()=>{
-      if(reloading)return;
-      reloading=true;
-      window.location.reload();
-    });
 
-    const activateWaiting=()=>{
-      if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});
-    };
-    activateWaiting();
+function bindKeyboardDismiss(){
+  const doneBtn=document.getElementById("keyboardDoneBtn");
+  const editableSelector='input[type="text"],input[type="url"],textarea';
 
-    reg.addEventListener("updatefound",()=>{
-      const worker=reg.installing;
-      if(!worker)return;
-      worker.addEventListener("statechange",()=>{
-        if(worker.state==="installed" && navigator.serviceWorker.controller){
-          worker.postMessage({type:"SKIP_WAITING"});
+  const showDone=()=>{
+    if(doneBtn)doneBtn.hidden=false;
+  };
+  const maybeHideDone=()=>{
+    setTimeout(()=>{
+      const a=document.activeElement;
+      if(doneBtn && !(a && a.matches && a.matches(editableSelector)))doneBtn.hidden=true;
+    },80);
+  };
+
+  document.querySelectorAll(editableSelector).forEach(el=>{
+    el.addEventListener("focus",showDone);
+    el.addEventListener("blur",maybeHideDone);
+
+    if(el.tagName==="INPUT"){
+      el.setAttribute("enterkeyhint","done");
+      el.addEventListener("keydown",e=>{
+        if(e.key==="Enter"){
+          e.preventDefault();
+          el.blur();
         }
       });
-    });
-
-    if(navigator.onLine){
-      try{await reg.update();}catch(_){}
     }
+  });
 
-    document.addEventListener("visibilitychange",()=>{
-      if(document.visibilityState==="visible" && navigator.onLine){
-        reg.update().catch(()=>{});
-      }
+  if(doneBtn){
+    doneBtn.addEventListener("touchstart",e=>{
+      e.preventDefault();
+      const a=document.activeElement;
+      if(a && a.blur)a.blur();
+      doneBtn.hidden=true;
+    },{passive:false});
+    doneBtn.addEventListener("click",()=>{
+      const a=document.activeElement;
+      if(a && a.blur)a.blur();
+      doneBtn.hidden=true;
     });
-  }catch(err){
-    console.error("Service worker kayıt hatası:",err);
   }
+
+  // Form alanlarının dışındaki boş bir yere dokunulursa klavyeyi kapat.
+  document.addEventListener("pointerdown",e=>{
+    const a=document.activeElement;
+    if(!a || !a.matches || !a.matches(editableSelector))return;
+    if(e.target.closest("input,textarea,select,button,label,summary"))return;
+    a.blur();
+  });
 }
-async function requestPersistentStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(_){}}
 
 function bindNavigation(){document.querySelectorAll("[data-go]").forEach(btn=>btn.addEventListener("click",async()=>{showView(btn.dataset.go);if(["pendingView","recordsView"].includes(btn.dataset.go))await renderLists();}));}
 function showView(id){document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));document.getElementById(id).classList.add("active");window.scrollTo({top:0,behavior:"smooth"});}

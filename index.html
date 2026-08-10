@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v3.2</span>
+  <span id="versionLabel" class="version">v3.4</span>
 </header>
 
 <main class="container">
@@ -79,7 +79,7 @@
 
       <div class="field-card">
         <label for="locationInput"><span class="step">3</span> Mahal / Daire / Şaft</label>
-        <input id="locationInput" type="text" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
+        <input id="locationInput" type="text" enterkeyhint="done" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
       </div>
 
       <div class="field-card">
@@ -144,10 +144,10 @@
     </div>
 
     <label for="deviceName">Bu telefon / kullanıcı</label>
-    <input id="deviceName" type="text" placeholder="Örn: Ahmet Formen">
+    <input id="deviceName" type="text" enterkeyhint="done" placeholder="Örn: Ahmet Formen">
 
     <label for="apiUrl">Bulut bağlantısı</label>
-    <input id="apiUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+    <input id="apiUrl" type="url" enterkeyhint="done" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
 
     <div class="settings-actions">
       <button id="testApiBtn" type="button" class="small-action">🔌 BAĞLANTIYI TEST ET</button>
@@ -161,6 +161,7 @@
     <button id="purgeSyncedBtn" class="submit-btn danger-action">🧹 GÖNDERİLMİŞ KAYITLARI TELEFONDAN TEMİZLE</button>
   </section>
 
+  <button id="keyboardDoneBtn" type="button" class="keyboard-done" hidden>⌨️ KLAVYEYİ KAPAT</button>
   <div id="toast" class="toast" hidden></div>
 </main>
 <script src="./app.js"></script>
