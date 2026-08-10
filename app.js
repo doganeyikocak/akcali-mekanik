@@ -1,4 +1,4 @@
-const APP_VERSION="3.1.0";
+const APP_VERSION="3.2.0";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
   floors:["B2","B1","Zemin","1. Kat","2. Kat","3. Kat","4. Kat","5. Kat","Çatı"],
@@ -10,18 +10,7 @@ const DB_NAME="akcali-mekanik-db",DB_VERSION=1,STORE="issues";
 let db=null,currentConfig=loadCachedConfig(),selectedPhotoData="",syncRunning=false;
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v3.1";
-
-  // v3.1: kısa açıklama zorunlu ve görünür.
-  const note=document.getElementById("noteInput");
-  if(note) note.required=true;
-  const details=document.querySelector(".optional-box");
-  if(details){
-    details.open=true;
-    const summary=details.querySelector("summary");
-    if(summary) summary.textContent="Kısa açıklama *";
-  }
-
+  document.getElementById("versionLabel").textContent="v3.2";
   await openDb();
   await requestPersistentStorage();
   bindNavigation();bindForm();bindButtons();loadSettings();renderSelects();
@@ -85,7 +74,6 @@ function bindForm(){
     if(!issue.issueType)return showToast("Hata türü seç.");
     if(!issue.contractor)return showToast("Taşeron seç.");
     if(!issue.foreman)return showToast("Formen seç.");
-    if(!issue.note)return showToast("Kısa açıklama yaz.");
     if(!selectedPhotoData)return showToast("Fotoğraf çek.");
 
     try{
@@ -178,7 +166,7 @@ async function renderLists(){const a=await getAllIssues();renderIssueCards("pend
 function renderIssueCards(id,items){
   const el=document.getElementById(id);
   if(!items.length){el.innerHTML='<div class="card"><p>Kayıt yok.</p></div>';return;}
-  el.innerHTML=items.map(x=>`<div class="card"><h3>${escapeHtml(x.block)} / ${escapeHtml(x.floor)} / ${escapeHtml(x.location)}</h3><p><b>Hata:</b> ${escapeHtml(x.issueType)}</p><p><b>Taşeron:</b> ${escapeHtml(x.contractor)}</p><p><b>Formen:</b> ${escapeHtml(x.foreman)}</p><p><b>Tarih:</b> ${new Date(x.createdAt).toLocaleString("tr-TR")}</p>${x.cloudId?`<p><b>Kayıt No:</b> ${escapeHtml(x.cloudId)}</p>`:""}${x.note?`<p><b>Açıklama:</b> ${escapeHtml(x.note)}</p>`:""}${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}<span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>${x.photoData?`<img src="${x.photoData}" alt="Hata fotoğrafı">`:""}</div>`).join("");
+  el.innerHTML=items.map(x=>`<div class="card"><h3>${escapeHtml(x.block)} / ${escapeHtml(x.floor)} / ${escapeHtml(x.location)}</h3><p><b>Hata:</b> ${escapeHtml(x.issueType)}</p><p><b>Taşeron:</b> ${escapeHtml(x.contractor)}</p><p><b>Formen:</b> ${escapeHtml(x.foreman)}</p><p><b>Tarih:</b> ${new Date(x.createdAt).toLocaleString("tr-TR")}</p>${x.cloudId?`<p><b>Kayıt No:</b> ${escapeHtml(x.cloudId)}</p>`:""}${x.note?`<p><b>Not:</b> ${escapeHtml(x.note)}</p>`:""}${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}<span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>${x.photoData?`<img src="${x.photoData}" alt="Hata fotoğrafı">`:""}</div>`).join("");
 }
 
 async function syncPending(){
