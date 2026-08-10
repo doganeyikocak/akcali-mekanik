@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v2.0</span>
+  <span id="versionLabel" class="version">v3.0</span>
 </header>
 
 <main class="container">
@@ -56,37 +56,66 @@
   <section id="newView" class="view">
     <div class="section-head">
       <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
-      <h2>Yeni Hata</h2>
+      <div>
+        <h2>Yeni Hata</h2>
+        <p class="subtitle">Sadece sırayla seç ve fotoğrafı çek.</p>
+      </div>
     </div>
 
     <form id="issueForm">
-      <label>Blok</label>
-      <div id="blockChoices" class="choice-grid"></div>
+      <div class="field-card">
+        <label for="blockSelect"><span class="step">1</span> Blok</label>
+        <select id="blockSelect" required>
+          <option value="">Blok seç</option>
+        </select>
+      </div>
 
-      <label>Kat</label>
-      <div id="floorChoices" class="choice-grid"></div>
+      <div class="field-card">
+        <label for="floorSelect"><span class="step">2</span> Kat</label>
+        <select id="floorSelect" required>
+          <option value="">Kat seç</option>
+        </select>
+      </div>
 
-      <label for="locationInput">Mahal / Daire / Şaft</label>
-      <input id="locationInput" type="text" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
+      <div class="field-card">
+        <label for="locationInput"><span class="step">3</span> Mahal / Daire / Şaft</label>
+        <input id="locationInput" type="text" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
+      </div>
 
-      <label>Hata Türü</label>
-      <div id="issueChoices" class="choice-grid"></div>
+      <div class="field-card">
+        <label for="issueSelect"><span class="step">4</span> Hata Türü</label>
+        <select id="issueSelect" required>
+          <option value="">Hata türü seç</option>
+        </select>
+      </div>
 
-      <label for="contractorSelect">Taşeron</label>
-      <select id="contractorSelect" required></select>
+      <div class="field-card">
+        <label for="contractorSelect"><span class="step">5</span> Taşeron</label>
+        <select id="contractorSelect" required>
+          <option value="">Taşeron seç</option>
+        </select>
+      </div>
 
-      <label for="foremanSelect">Formen</label>
-      <select id="foremanSelect" required></select>
+      <div class="field-card">
+        <label for="foremanSelect"><span class="step">6</span> Formen</label>
+        <select id="foremanSelect" required>
+          <option value="">Formen seç</option>
+        </select>
+      </div>
 
-      <label for="noteInput">Kısa Açıklama <span class="optional">(isteğe bağlı)</span></label>
-      <textarea id="noteInput" rows="3" placeholder="Örn: Pis su hattı ters eğimli"></textarea>
-      <button id="voiceBtn" type="button" class="voice-btn">🎙️ SESLE YAZ</button>
+      <div class="field-card">
+        <label for="photoInput"><span class="step">7</span> Fotoğraf</label>
+        <input id="photoInput" class="photo-input" type="file" accept="image/*" capture="environment" required>
+        <img id="photoPreview" class="photo-preview" hidden alt="Fotoğraf önizleme">
+      </div>
 
-      <label>Fotoğraf</label>
-      <input id="photoInput" type="file" accept="image/*" capture="environment" required>
-      <img id="photoPreview" class="photo-preview" hidden alt="Fotoğraf önizleme">
+      <details class="optional-box">
+        <summary>İstersen kısa açıklama ekle</summary>
+        <textarea id="noteInput" rows="3" placeholder="Örn: Pis su hattı ters eğimli"></textarea>
+        <button id="voiceBtn" type="button" class="voice-btn">🎙️ SESLE YAZ</button>
+      </details>
 
-      <button type="submit" class="submit-btn">✅ KAYDET</button>
+      <button type="submit" class="submit-btn save-btn">✅ HATAYI KAYDET</button>
     </form>
   </section>
 
