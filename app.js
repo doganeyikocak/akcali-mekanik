@@ -1,4 +1,4 @@
-const APP_VERSION="3.2.0";
+const APP_VERSION="3.3.0";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
   floors:["B2","B1","Zemin","1. Kat","2. Kat","3. Kat","4. Kat","5. Kat","Çatı"],
@@ -10,7 +10,7 @@ const DB_NAME="akcali-mekanik-db",DB_VERSION=1,STORE="issues";
 let db=null,currentConfig=loadCachedConfig(),selectedPhotoData="",syncRunning=false;
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v3.2";
+  document.getElementById("versionLabel").textContent="v3.3";
   await openDb();
   await requestPersistentStorage();
   bindNavigation();bindForm();bindButtons();loadSettings();renderSelects();
@@ -23,7 +23,46 @@ document.addEventListener("DOMContentLoaded",async()=>{
 function isIos(){return /iphone|ipad|ipod/i.test(navigator.userAgent);}
 function isStandalone(){return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
 function showIosInstallHint(){const card=document.getElementById("iosInstallCard");if(isIos()&&!isStandalone()&&localStorage.getItem("hideIosInstall")!=="1")card.hidden=false;}
-function registerServiceWorker(){if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.error);}
+async function registerServiceWorker(){
+  if(!("serviceWorker" in navigator))return;
+  try{
+    const reg=await navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"});
+    let reloading=false;
+
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(reloading)return;
+      reloading=true;
+      window.location.reload();
+    });
+
+    const activateWaiting=()=>{
+      if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});
+    };
+    activateWaiting();
+
+    reg.addEventListener("updatefound",()=>{
+      const worker=reg.installing;
+      if(!worker)return;
+      worker.addEventListener("statechange",()=>{
+        if(worker.state==="installed" && navigator.serviceWorker.controller){
+          worker.postMessage({type:"SKIP_WAITING"});
+        }
+      });
+    });
+
+    if(navigator.onLine){
+      try{await reg.update();}catch(_){}
+    }
+
+    document.addEventListener("visibilitychange",()=>{
+      if(document.visibilityState==="visible" && navigator.onLine){
+        reg.update().catch(()=>{});
+      }
+    });
+  }catch(err){
+    console.error("Service worker kayıt hatası:",err);
+  }
+}
 async function requestPersistentStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(_){}}
 
 function bindNavigation(){document.querySelectorAll("[data-go]").forEach(btn=>btn.addEventListener("click",async()=>{showView(btn.dataset.go);if(["pendingView","recordsView"].includes(btn.dataset.go))await renderLists();}));}
