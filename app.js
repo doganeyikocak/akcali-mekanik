@@ -1,8 +1,9 @@
-const APP_VERSION="3.4.0";
+const APP_VERSION="3.5.0";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
   floors:["B2","B1","Zemin","1. Kat","2. Kat","3. Kat","4. Kat","5. Kat","Çatı"],
   issues:["Ters Eğim","Eksik Kelepçe","Yanlış Güzergâh","İzolasyon Eksik","Montaj Hatası","Kaçak","Diğer"],
+  priorities:["Kritik","Yüksek","Normal","Düşük"],
   contractors:["Taşeron 1","Taşeron 2","Taşeron 3"],
   foremen:["Formen 1","Formen 2","Formen 3"]
 };
@@ -10,7 +11,7 @@ const DB_NAME="akcali-mekanik-db",DB_VERSION=1,STORE="issues";
 let db=null,currentConfig=loadCachedConfig(),selectedPhotoData="",syncRunning=false;
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v3.4";
+  document.getElementById("versionLabel").textContent="v3.5";
   await openDb();
   await requestPersistentStorage();
   bindNavigation();bindForm();bindButtons();bindKeyboardDismiss();loadSettings();renderSelects();
@@ -23,7 +24,43 @@ document.addEventListener("DOMContentLoaded",async()=>{
 function isIos(){return /iphone|ipad|ipod/i.test(navigator.userAgent);}
 function isStandalone(){return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
 function showIosInstallHint(){const card=document.getElementById("iosInstallCard");if(isIos()&&!isStandalone()&&localStorage.getItem("hideIosInstall")!=="1")card.hidden=false;}
-function registerServiceWorker(){if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.error);}
+async function registerServiceWorker(){
+  if(!("serviceWorker" in navigator))return;
+  try{
+    const reg=await navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"});
+    let reloading=false;
+
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(reloading)return;
+      reloading=true;
+      window.location.reload();
+    });
+
+    if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});
+
+    reg.addEventListener("updatefound",()=>{
+      const worker=reg.installing;
+      if(!worker)return;
+      worker.addEventListener("statechange",()=>{
+        if(worker.state==="installed" && navigator.serviceWorker.controller){
+          worker.postMessage({type:"SKIP_WAITING"});
+        }
+      });
+    });
+
+    if(navigator.onLine){
+      try{await reg.update();}catch(_){}
+    }
+
+    document.addEventListener("visibilitychange",()=>{
+      if(document.visibilityState==="visible" && navigator.onLine){
+        reg.update().catch(()=>{});
+      }
+    });
+  }catch(err){
+    console.error("Service worker kayıt hatası:",err);
+  }
+}
 async function requestPersistentStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(_){}}
 
 
@@ -86,6 +123,7 @@ function renderSelects(){
   fillSelect("blockSelect",currentConfig.blocks,"Blok seç");
   fillSelect("floorSelect",currentConfig.floors,"Kat seç");
   fillSelect("issueSelect",currentConfig.issues,"Hata türü seç");
+  fillSelect("prioritySelect",currentConfig.priorities,"Öncelik seç");
   fillSelect("contractorSelect",currentConfig.contractors,"Taşeron seç");
   fillSelect("foremanSelect",currentConfig.foremen,"Formen seç");
 }
@@ -113,11 +151,13 @@ function bindForm(){
       floor:document.getElementById("floorSelect").value,
       location:document.getElementById("locationInput").value.trim(),
       issueType:document.getElementById("issueSelect").value,
+      priority:document.getElementById("prioritySelect").value,
       contractor:document.getElementById("contractorSelect").value,
       foreman:document.getElementById("foremanSelect").value,
       note:document.getElementById("noteInput").value.trim(),
       photoData:selectedPhotoData,
       deviceName:(localStorage.getItem("deviceName")||"").trim(),
+      appVersion:APP_VERSION,
       syncStatus:"pending",cloudId:"",lastError:""
     };
 
@@ -125,8 +165,10 @@ function bindForm(){
     if(!issue.floor)return showToast("Kat seç.");
     if(!issue.location)return showToast("Mahal / daire yaz.");
     if(!issue.issueType)return showToast("Hata türü seç.");
+    if(!issue.priority)return showToast("Öncelik seç.");
     if(!issue.contractor)return showToast("Taşeron seç.");
     if(!issue.foreman)return showToast("Formen seç.");
+    if(!issue.note)return showToast("Kısa açıklama yaz.");
     if(!selectedPhotoData)return showToast("Fotoğraf çek.");
 
     try{
@@ -195,7 +237,7 @@ async function refreshRemoteConfig(showResult=false){
 function loadCachedConfig(){try{return sanitizeConfig(JSON.parse(localStorage.getItem("cachedConfig")||"null")||DEFAULTS);}catch(_){return DEFAULTS;}}
 function sanitizeConfig(c){
   const clean=k=>Array.from(new Set((Array.isArray(c[k])?c[k]:DEFAULTS[k]).map(x=>String(x||"").trim()).filter(Boolean)));
-  return {blocks:clean("blocks"),floors:clean("floors"),issues:clean("issues"),contractors:clean("contractors"),foremen:clean("foremen")};
+  return {blocks:clean("blocks"),floors:clean("floors"),issues:clean("issues"),priorities:clean("priorities"),contractors:clean("contractors"),foremen:clean("foremen")};
 }
 
 function resetIssueForm(){
@@ -219,7 +261,7 @@ async function renderLists(){const a=await getAllIssues();renderIssueCards("pend
 function renderIssueCards(id,items){
   const el=document.getElementById(id);
   if(!items.length){el.innerHTML='<div class="card"><p>Kayıt yok.</p></div>';return;}
-  el.innerHTML=items.map(x=>`<div class="card"><h3>${escapeHtml(x.block)} / ${escapeHtml(x.floor)} / ${escapeHtml(x.location)}</h3><p><b>Hata:</b> ${escapeHtml(x.issueType)}</p><p><b>Taşeron:</b> ${escapeHtml(x.contractor)}</p><p><b>Formen:</b> ${escapeHtml(x.foreman)}</p><p><b>Tarih:</b> ${new Date(x.createdAt).toLocaleString("tr-TR")}</p>${x.cloudId?`<p><b>Kayıt No:</b> ${escapeHtml(x.cloudId)}</p>`:""}${x.note?`<p><b>Not:</b> ${escapeHtml(x.note)}</p>`:""}${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}<span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>${x.photoData?`<img src="${x.photoData}" alt="Hata fotoğrafı">`:""}</div>`).join("");
+  el.innerHTML=items.map(x=>`<div class="card"><h3>${escapeHtml(x.block)} / ${escapeHtml(x.floor)} / ${escapeHtml(x.location)}</h3><p><b>Hata:</b> ${escapeHtml(x.issueType)}</p><p><b>Öncelik:</b> ${escapeHtml(x.priority||"Normal")}</p><p><b>Taşeron:</b> ${escapeHtml(x.contractor)}</p><p><b>Formen:</b> ${escapeHtml(x.foreman)}</p><p><b>Tarih:</b> ${new Date(x.createdAt).toLocaleString("tr-TR")}</p>${x.cloudId?`<p><b>Kayıt No:</b> ${escapeHtml(x.cloudId)}</p>`:""}${x.note?`<p><b>Not:</b> ${escapeHtml(x.note)}</p>`:""}${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}<span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>${x.photoData?`<img src="${x.photoData}" alt="Hata fotoğrafı">`:""}</div>`).join("");
 }
 
 async function syncPending(){
@@ -250,7 +292,7 @@ async function purgeSynced(){
 }
 async function exportCsv(){
   const all=await getAllIssues();
-  const rows=[["localId","createdAt","block","floor","location","issueType","contractor","foreman","note","deviceName","syncStatus","cloudId","lastError"],...all.map(x=>[x.localId,x.createdAt,x.block,x.floor,x.location,x.issueType,x.contractor,x.foreman,x.note,x.deviceName,x.syncStatus,x.cloudId,x.lastError])];
+  const rows=[["localId","createdAt","block","floor","location","issueType","priority","contractor","foreman","note","deviceName","syncStatus","cloudId","lastError"],...all.map(x=>[x.localId,x.createdAt,x.block,x.floor,x.location,x.issueType,x.priority||"Normal",x.contractor,x.foreman,x.note,x.deviceName,x.syncStatus,x.cloudId,x.lastError])];
   const csv=rows.map(r=>r.map(csvEscape).join(",")).join("\n"),blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download=`akcali-mekanik-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);
 }

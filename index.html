@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v3.4</span>
+  <span id="versionLabel" class="version">v3.5</span>
 </header>
 
 <main class="container">
@@ -90,31 +90,42 @@
       </div>
 
       <div class="field-card">
-        <label for="contractorSelect"><span class="step">5</span> Taşeron</label>
+        <label for="prioritySelect"><span class="step">5</span> Öncelik</label>
+        <select id="prioritySelect" required>
+          <option value="">Öncelik seç</option>
+        </select>
+        <p class="priority-help"><b>Kritik:</b> kapatılacak imalat, güvenlik veya ciddi yeniden iş riski.</p>
+      </div>
+
+      <div class="field-card">
+        <label for="contractorSelect"><span class="step">6</span> Taşeron</label>
         <select id="contractorSelect" required>
           <option value="">Taşeron seç</option>
         </select>
       </div>
 
       <div class="field-card">
-        <label for="foremanSelect"><span class="step">6</span> Formen</label>
+        <label for="foremanSelect"><span class="step">7</span> Formen</label>
         <select id="foremanSelect" required>
           <option value="">Formen seç</option>
         </select>
       </div>
 
       <div class="field-card">
-        <label for="photoInput"><span class="step">7</span> Fotoğraf</label>
+        <label for="photoInput"><span class="step">9</span> Fotoğraf</label>
         <input id="photoInput" class="photo-input" type="file" accept="image/*" required>
         <p class="photo-help">📷 Kamera açılmazsa <b>Galeri / Fotoğraflar</b> seçeneğini kullan.</p>
         <img id="photoPreview" class="photo-preview" hidden alt="Fotoğraf önizleme">
       </div>
 
-      <details class="optional-box">
-        <summary>İstersen kısa açıklama ekle</summary>
-        <textarea id="noteInput" rows="3" placeholder="Örn: Pis su hattı ters eğimli"></textarea>
-        <button id="voiceBtn" type="button" class="voice-btn">🎙️ SESLE YAZ</button>
-      </details>
+      <div class="field-card">
+        <label for="noteInput"><span class="step">8</span> Kısa Açıklama</label>
+        <textarea id="noteInput" rows="3" maxlength="250" placeholder="Örn: Pis su hattı ters eğimli" required></textarea>
+        <div class="note-tools">
+          <span class="field-hint">Zorunlu · en fazla 250 karakter</span>
+          <button id="voiceBtn" type="button" class="voice-btn compact">🎙️ SESLE YAZ</button>
+        </div>
+      </div>
 
       <button type="submit" class="submit-btn save-btn">✅ HATAYI KAYDET</button>
     </form>

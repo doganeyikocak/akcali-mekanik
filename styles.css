@@ -67,3 +67,9 @@ textarea{resize:vertical;font-size:17px}
   font-size:15px;
   box-shadow:0 3px 12px rgba(0,0,0,.22);
 }
+
+.priority-help{margin:8px 2px 0;color:#5F6B76;font-size:13px;line-height:1.35}
+.note-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
+.field-hint{font-size:13px;color:#687582}
+.voice-btn.compact{width:auto;min-height:44px;margin-top:0;white-space:nowrap}
+@media(max-width:430px){.note-tools{align-items:stretch;flex-direction:column}.voice-btn.compact{width:100%}}
