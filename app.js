@@ -1,4 +1,4 @@
-const APP_VERSION="4.2.0";
+const APP_VERSION="4.2.1";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -33,7 +33,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v4.2";
+  document.getElementById("versionLabel").textContent="v4.2.1";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -743,7 +743,7 @@ async function syncPendingIssues(url){
   let ok=0;
   for(const issue of pending){
     try{
-      const data=await apiPost(url,{action:"createIssue",issue});
+      const data=await apiPost(url,{action:"createIssue",issue},120000);
       if(!data.ok)throw new Error(data.error||"Sunucu hatası");
       issue.syncStatus="synced";
       issue.cloudId=data.recordId||issue.cloudId||"";
@@ -768,7 +768,7 @@ async function syncPendingCorrections(url){
         contractor:correction.contractor,
         token:correction.token,
         correction
-      });
+      },120000);
       if(!data.ok)throw new Error(data.error||"Sunucu hatası");
       correction.syncStatus="synced";
       correction.lastError="";
@@ -783,9 +783,9 @@ async function syncPendingCorrections(url){
   return {ok,total:pending.length};
 }
 
-async function apiPost(url,payload){
+async function apiPost(url,payload,timeoutMs=20000){
   const controller=("AbortController" in window)?new AbortController():null;
-  const timer=controller?setTimeout(()=>controller.abort(),15000):null;
+  const timer=controller?setTimeout(()=>controller.abort(),timeoutMs):null;
   try{
     const res=await fetch(url,{
       method:"POST",
@@ -795,7 +795,7 @@ async function apiPost(url,payload){
     });
     return await res.json();
   }catch(err){
-    if(err&&err.name==="AbortError")throw new Error("Bağlantı zaman aşımına uğradı.");
+    if(err&&err.name==="AbortError")throw new Error("Sunucu cevabı gecikti. Kayıt güvenli biçimde tekrar denenecek.");
     throw err;
   }finally{
     if(timer)clearTimeout(timer);
@@ -1061,7 +1061,7 @@ async function loadSecurePhoto(box){
       token:session.token,
       recordId:box.dataset.recordId,
       kind:box.dataset.kind
-    });
+    },60000);
     if(!data.ok)throw new Error(data.error||"Fotoğraf alınamadı");
     securePhotoCache.set(cacheKey,data.dataUrl);
     while(securePhotoCache.size>SECURE_PHOTO_CACHE_LIMIT){
