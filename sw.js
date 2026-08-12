@@ -1,4 +1,4 @@
-const CACHE="akcali-mekanik-v3-5";
+const CACHE="akcali-mekanik-v4-0";
 const ASSETS=[
   "./",
   "./index.html",
@@ -16,7 +16,7 @@ self.addEventListener("install",event=>{
     for(const url of ASSETS){
       try{
         const response=await fetch(new Request(url,{cache:"reload"}));
-        if(response && response.ok)await cache.put(url,response.clone());
+        if(response&&response.ok)await cache.put(url,response.clone());
       }catch(_){}
     }
     await self.skipWaiting();
@@ -32,7 +32,7 @@ self.addEventListener("activate",event=>{
 });
 
 self.addEventListener("message",event=>{
-  if(event.data && event.data.type==="SKIP_WAITING")self.skipWaiting();
+  if(event.data&&event.data.type==="SKIP_WAITING")self.skipWaiting();
 });
 
 self.addEventListener("fetch",event=>{
@@ -45,13 +45,13 @@ self.addEventListener("fetch",event=>{
     event.respondWith((async()=>{
       try{
         const fresh=await fetch(new Request(req,{cache:"no-store"}));
-        if(fresh && fresh.ok){
+        if(fresh&&fresh.ok){
           const cache=await caches.open(CACHE);
           await cache.put("./index.html",fresh.clone());
           return fresh;
         }
       }catch(_){}
-      return (await caches.match(req)) || (await caches.match("./index.html"));
+      return (await caches.match(req))||(await caches.match("./index.html"));
     })());
     return;
   }
@@ -59,12 +59,12 @@ self.addEventListener("fetch",event=>{
   event.respondWith((async()=>{
     try{
       const fresh=await fetch(new Request(req,{cache:"no-cache"}));
-      if(fresh && fresh.ok){
+      if(fresh&&fresh.ok){
         const cache=await caches.open(CACHE);
         await cache.put(req,fresh.clone());
         return fresh;
       }
     }catch(_){}
-    return (await caches.match(req)) || Response.error();
+    return (await caches.match(req))||Response.error();
   })());
 });

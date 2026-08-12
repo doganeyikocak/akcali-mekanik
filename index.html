@@ -20,21 +20,29 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v3.5</span>
+  <span id="versionLabel" class="version">v4.0</span>
 </header>
 
 <main class="container">
   <section id="iosInstallCard" class="install-card" hidden>
-    <strong>📱 iPhone'a bir kez kur</strong>
-    <p>Safari'de <b>Paylaş</b> → <b>Ana Ekrana Ekle</b> → <b>Ekle</b>.</p>
+    <strong>📱 Telefona kur</strong>
+    <p>iPhone: Safari → Paylaş → Ana Ekrana Ekle. Android: Chrome → Uygulamayı yükle / Ana ekrana ekle.</p>
     <button id="hideInstallCard" class="small-btn">Anladım</button>
   </section>
 
   <section id="homeView" class="view active">
+    <div class="role-label">SAHA / FORMEN</div>
     <button class="home-btn primary" data-go="newView">
-      <span class="icon">➕</span><span>YENİ HATA</span>
+      <span class="icon">➕</span><span>YENİ HATA BİLDİR</span>
     </button>
 
+    <div class="role-label contractor-label">TAŞERON</div>
+    <button id="contractorHomeBtn" class="home-btn contractor">
+      <span class="icon">🔧</span>
+      <span id="contractorHomeText">TAŞERON GİRİŞİ</span>
+    </button>
+
+    <div class="role-label">TELEFON / SENKRONİZASYON</div>
     <button class="home-btn" data-go="pendingView">
       <span class="icon">📤</span><span>GÖNDERİLMEMİŞ</span>
       <strong id="pendingBadge" class="badge">0</strong>
@@ -58,64 +66,45 @@
       <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
       <div>
         <h2>Yeni Hata</h2>
-        <p class="subtitle">Sadece sırayla seç ve fotoğrafı çek.</p>
+        <p class="subtitle">Sırayla seç, açıklamayı yaz ve fotoğrafı ekle.</p>
       </div>
     </div>
 
     <form id="issueForm">
       <div class="field-card">
         <label for="blockSelect"><span class="step">1</span> Blok</label>
-        <select id="blockSelect" required>
-          <option value="">Blok seç</option>
-        </select>
+        <select id="blockSelect" required><option value="">Blok seç</option></select>
       </div>
 
       <div class="field-card">
         <label for="floorSelect"><span class="step">2</span> Kat</label>
-        <select id="floorSelect" required>
-          <option value="">Kat seç</option>
-        </select>
+        <select id="floorSelect" required><option value="">Kat seç</option></select>
       </div>
 
       <div class="field-card">
         <label for="locationInput"><span class="step">3</span> Mahal / Daire / Şaft</label>
-        <input id="locationInput" type="text" enterkeyhint="done" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
+        <input id="locationInput" type="text" enterkeyhint="done" maxlength="120" placeholder="Örn: Daire 21 Banyo" autocomplete="off" required>
       </div>
 
       <div class="field-card">
         <label for="issueSelect"><span class="step">4</span> Hata Türü</label>
-        <select id="issueSelect" required>
-          <option value="">Hata türü seç</option>
-        </select>
+        <select id="issueSelect" required><option value="">Hata türü seç</option></select>
       </div>
 
       <div class="field-card">
         <label for="prioritySelect"><span class="step">5</span> Öncelik</label>
-        <select id="prioritySelect" required>
-          <option value="">Öncelik seç</option>
-        </select>
-        <p class="priority-help"><b>Kritik:</b> kapatılacak imalat, güvenlik veya ciddi yeniden iş riski.</p>
+        <select id="prioritySelect" required><option value="">Öncelik seç</option></select>
+        <p class="field-hint"><b>Kritik:</b> kapatılacak imalat, güvenlik veya ciddi yeniden iş riski.</p>
       </div>
 
       <div class="field-card">
-        <label for="contractorSelect"><span class="step">6</span> Taşeron</label>
-        <select id="contractorSelect" required>
-          <option value="">Taşeron seç</option>
-        </select>
+        <label for="contractorSelect"><span class="step">6</span> Sorumlu Taşeron</label>
+        <select id="contractorSelect" required><option value="">Taşeron seç</option></select>
       </div>
 
       <div class="field-card">
-        <label for="foremanSelect"><span class="step">7</span> Formen</label>
-        <select id="foremanSelect" required>
-          <option value="">Formen seç</option>
-        </select>
-      </div>
-
-      <div class="field-card">
-        <label for="photoInput"><span class="step">9</span> Fotoğraf</label>
-        <input id="photoInput" class="photo-input" type="file" accept="image/*" required>
-        <p class="photo-help">📷 Kamera açılmazsa <b>Galeri / Fotoğraflar</b> seçeneğini kullan.</p>
-        <img id="photoPreview" class="photo-preview" hidden alt="Fotoğraf önizleme">
+        <label for="foremanSelect"><span class="step">7</span> Sorumlu Formen</label>
+        <select id="foremanSelect" required><option value="">Formen seç</option></select>
       </div>
 
       <div class="field-card">
@@ -127,7 +116,98 @@
         </div>
       </div>
 
+      <div class="field-card">
+        <label for="termSelect"><span class="step">9</span> Termin Süresi</label>
+        <select id="termSelect" required><option value="">Termin seç</option></select>
+        <p id="duePreview" class="due-preview">Termin tarihi seçime göre hesaplanacak.</p>
+      </div>
+
+      <div class="field-card">
+        <label for="photoInput"><span class="step">10</span> Hata Fotoğrafı</label>
+        <input id="photoInput" class="photo-input" type="file" accept="image/*" required>
+        <p class="field-hint">📷 Kamera açılmazsa Galeri / Fotoğraflar seçeneğini kullan.</p>
+        <img id="photoPreview" class="photo-preview" hidden alt="Hata fotoğrafı önizleme">
+      </div>
+
       <button type="submit" class="submit-btn save-btn">✅ HATAYI KAYDET</button>
+    </form>
+  </section>
+
+  <section id="contractorLoginView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <div>
+        <h2>Taşeron Girişi</h2>
+        <p class="subtitle">Firmanı seç ve 4 haneli PIN'i gir.</p>
+      </div>
+    </div>
+
+    <div class="field-card">
+      <label for="contractorLoginSelect">Firma</label>
+      <select id="contractorLoginSelect"><option value="">Firma seç</option></select>
+    </div>
+
+    <div class="field-card">
+      <label for="contractorPin">4 Haneli PIN</label>
+      <input id="contractorPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" enterkeyhint="done" placeholder="••••">
+      <p class="field-hint">PIN, mekanik ofis tarafından firmaya verilir.</p>
+    </div>
+
+    <label class="remember-row">
+      <input id="rememberContractor" type="checkbox" checked>
+      <span>Bu telefonu hatırla</span>
+    </label>
+
+    <button id="contractorLoginBtn" class="submit-btn contractor-action">🔐 GİRİŞ YAP</button>
+    <p id="contractorLoginResult" class="help">İlk giriş için internet gerekir. Sonraki kullanımda telefon firmayı hatırlayabilir.</p>
+  </section>
+
+  <section id="contractorPanelView" class="view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2 id="contractorPanelTitle">Taşeron Paneli</h2>
+        <p id="contractorPanelStatus" class="subtitle">İşler yükleniyor…</p>
+      </div>
+      <button id="contractorLogoutBtn" class="small-btn danger-outline">Çıkış</button>
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-box"><strong id="contractorOpenCount">0</strong><span>Açık</span></div>
+      <div class="summary-box warning"><strong id="contractorOverdueCount">0</strong><span>Gecikmiş</span></div>
+      <div class="summary-box waiting"><strong id="contractorWaitingCount">0</strong><span>Kontrol Bekliyor</span></div>
+    </div>
+
+    <button id="refreshContractorBtn" class="submit-btn contractor-action">↻ İŞLERİ YENİLE</button>
+    <div id="contractorIssueList" class="card-list"></div>
+  </section>
+
+  <section id="correctionView" class="view">
+    <div class="section-head">
+      <button id="correctionBackBtn" class="back-btn" aria-label="Geri">←</button>
+      <div>
+        <h2>Düzeltme Bildir</h2>
+        <p id="correctionRecordLabel" class="subtitle"></p>
+      </div>
+    </div>
+
+    <div id="correctionIssueSummary" class="card"></div>
+
+    <form id="correctionForm">
+      <div class="field-card">
+        <label for="correctionNote">Düzeltme Açıklaması</label>
+        <textarea id="correctionNote" rows="3" maxlength="250" placeholder="Örn: Eksik kelepçeler tamamlandı" required></textarea>
+        <p class="field-hint">Zorunlu · en fazla 250 karakter</p>
+      </div>
+
+      <div class="field-card">
+        <label for="correctionPhotoInput">Düzeltme Fotoğrafı</label>
+        <input id="correctionPhotoInput" class="photo-input" type="file" accept="image/*" required>
+        <p class="field-hint">Kamera açılmazsa Galeri / Fotoğraflar seçeneğini kullan.</p>
+        <img id="correctionPhotoPreview" class="photo-preview" hidden alt="Düzeltme fotoğrafı önizleme">
+      </div>
+
+      <button type="submit" class="submit-btn success-action">✅ DÜZELTMEYİ BİLDİR</button>
     </form>
   </section>
 
@@ -163,6 +243,7 @@
     <div class="settings-actions">
       <button id="testApiBtn" type="button" class="small-action">🔌 BAĞLANTIYI TEST ET</button>
       <button id="refreshConfigBtn" type="button" class="small-action">↻ LİSTELERİ GÜNCELLE</button>
+      <button id="checkUpdateBtn" type="button" class="small-action">⬆️ GÜNCELLEMEYİ KONTROL ET</button>
     </div>
 
     <p id="apiTestResult" class="help">Bulut bağlantısı boşsa kayıtlar yalnızca telefonda kalır.</p>
@@ -175,6 +256,7 @@
   <button id="keyboardDoneBtn" type="button" class="keyboard-done" hidden>⌨️ KLAVYEYİ KAPAT</button>
   <div id="toast" class="toast" hidden></div>
 </main>
+
 <script src="./app.js"></script>
 </body>
 </html>

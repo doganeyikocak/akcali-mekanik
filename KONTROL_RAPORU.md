@@ -1,8 +1,28 @@
-# KONTROL RAPORU
+# KONTROL RAPORU — Akçalı Mekanik v4.0
 
-- **manifest_json:** OK
-- **required_files:** OK
-- **html_refs:** OK
-- **app_js_syntax:** OK
-- **sw_js_syntax:** OK
-- **icon_dimensions:** {'apple-touch-icon.png': (180, 180), 'icon-192.png': (192, 192), 'icon-512.png': (512, 512)}
+- v4.0: OK
+- hazır API URL: OK
+- termin zorunlu: OK
+- kısa açıklama zorunlu: OK
+- firma PIN alanı: OK
+- PIN backend doğrulama: OK
+- PIN config dışı: OK
+- PIN değişince token geçersiz: OK
+- firma bazlı iş filtresi: OK
+- düzeltme açıklama+foto: OK
+- Kontrol Bekliyor: OK
+- düzeltme geçmişi: OK
+- offline hata: OK
+- offline düzeltme: OK
+- otomatik güncelleme: OK
+- manuel güncelleme: OK
+- eski Android foto: OK
+- klavye kapatma: OK
+- app.js syntax: OK
+- app.js top-level runtime: OK
+- sw.js syntax: OK
+- backend.gs syntax: OK
+- manifest JSON: OK
+- HTML/JS id eşleşmesi: OK
+- data-go hedefleri: OK
+- yerel HTTP 200 testi: OK
