@@ -1,4 +1,4 @@
-const APP_VERSION="4.0.0";
+const APP_VERSION="4.2.0";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -11,7 +11,7 @@ const DEFAULTS={
 };
 
 const DB_NAME="akcali-mekanik-db";
-const DB_VERSION=2;
+const DB_VERSION=3;
 const ISSUE_STORE="issues";
 const CORRECTION_STORE="corrections";
 
@@ -22,11 +22,20 @@ let selectedCorrectionPhotoData="";
 let correctionTarget=null;
 let syncRunning=false;
 let swRegistration=null;
+let dbReadyPromise=null;
+let issueSaveRunning=false;
+let correctionSaveRunning=false;
+let contractorLoginRunning=false;
+let photoProcessing=false;
+let correctionPhotoProcessing=false;
+const securePhotoCache=new Map();
+const SECURE_PHOTO_CACHE_LIMIT=12;
+
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v4.0";
-  await openDb();
-  await requestPersistentStorage();
+  document.getElementById("versionLabel").textContent="v4.2";
+
+  // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
   bindForm();
   bindCorrectionForm();
@@ -37,9 +46,17 @@ document.addEventListener("DOMContentLoaded",async()=>{
   updateConnectionStatus();
   showInstallHint();
   updateContractorHome();
-  await refreshCounts();
-  await renderLists();
   registerServiceWorker();
+
+  dbReadyPromise=openDb();
+  try{
+    await dbReadyPromise;
+    await requestPersistentStorage();
+    await refreshCounts();
+  }catch(err){
+    console.error("Yerel veritabanı açılamadı:",err);
+    showToast("Telefon kayıt alanı açılamadı.");
+  }
 
   if(navigator.onLine){
     refreshRemoteConfig().catch(()=>{});
@@ -49,7 +66,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   window.addEventListener("online",async()=>{
     updateConnectionStatus();
     showToast("İnternet geldi. Bekleyen kayıtlar gönderiliyor.");
-    await refreshRemoteConfig().catch(()=>{});
+    refreshRemoteConfig().catch(()=>{});
     await syncAllPending();
     if(loadContractorSession())refreshContractorIssues(false).catch(()=>{});
   });
@@ -170,7 +187,31 @@ function showView(id){
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   const target=document.getElementById(id);
   if(target)target.classList.add("active");
-  window.scrollTo({top:0,behavior:"smooth"});
+  window.scrollTo(0,0);
+}
+
+function setButtonBusy(btn,busy,busyText){
+  if(!btn)return;
+  if(busy){
+    if(!btn.dataset.originalHtml)btn.dataset.originalHtml=btn.innerHTML;
+    btn.disabled=true;
+    btn.classList.add("busy-label");
+    if(busyText)btn.textContent=busyText;
+  }else{
+    btn.disabled=false;
+    btn.classList.remove("busy-label");
+    if(btn.dataset.originalHtml){
+      btn.innerHTML=btn.dataset.originalHtml;
+      delete btn.dataset.originalHtml;
+    }
+  }
+}
+
+function setProcessStatus(id,text,state=""){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.textContent=text||"";
+  el.className="process-status"+(state?" "+state:"");
 }
 
 function bindButtons(){
@@ -258,15 +299,29 @@ function updateDuePreview(){
 function bindForm(){
   document.getElementById("photoInput").addEventListener("change",async e=>{
     const f=e.target.files[0];if(!f)return;
+    photoProcessing=true;
+    selectedPhotoData="";
+    setProcessStatus("photoProcessStatus","Fotoğraf hazırlanıyor…");
     try{
       selectedPhotoData=await compressImage(f,1280,.68);
       const img=document.getElementById("photoPreview");
       img.src=selectedPhotoData;img.hidden=false;
-    }catch(_){showToast("Fotoğraf işlenemedi. Tekrar seç.");}
+      setProcessStatus("photoProcessStatus","✓ Fotoğraf hazır","ok");
+    }catch(_){
+      setProcessStatus("photoProcessStatus","Fotoğraf işlenemedi.","error");
+      showToast("Fotoğraf işlenemedi. Tekrar seç.");
+    }finally{
+      photoProcessing=false;
+    }
   });
 
   document.getElementById("issueForm").addEventListener("submit",async e=>{
     e.preventDefault();
+    if(issueSaveRunning)return;
+    if(photoProcessing)return showToast("Fotoğraf hazırlanıyor. Birkaç saniye bekle.");
+    issueSaveRunning=true;
+    const submitBtn=e.submitter||document.querySelector("#issueForm .save-btn");
+    setButtonBusy(submitBtn,true,"KAYDEDİLİYOR…");
     const termRaw=document.getElementById("termSelect").value;
     const issue={
       localId:makeUuid(),
@@ -288,16 +343,16 @@ function bindForm(){
       lastError:""
     };
 
-    if(!issue.block)return showToast("Blok seç.");
-    if(!issue.floor)return showToast("Kat seç.");
-    if(!issue.location)return showToast("Mahal / daire yaz.");
-    if(!issue.issueType)return showToast("Hata türü seç.");
-    if(!issue.priority)return showToast("Öncelik seç.");
-    if(!issue.contractor)return showToast("Taşeron seç.");
-    if(!issue.foreman)return showToast("Formen seç.");
-    if(!issue.note)return showToast("Kısa açıklama yaz.");
-    if(issue.termDays===null||!Number.isFinite(issue.termDays))return showToast("Termin süresi seç.");
-    if(!selectedPhotoData)return showToast("Hata fotoğrafı ekle.");
+    if(!issue.block){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Blok seç.");}
+    if(!issue.floor){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Kat seç.");}
+    if(!issue.location){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Mahal / daire yaz.");}
+    if(!issue.issueType){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Hata türü seç.");}
+    if(!issue.priority){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Öncelik seç.");}
+    if(!issue.contractor){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Taşeron seç.");}
+    if(!issue.foreman){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Formen seç.");}
+    if(!issue.note){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Kısa açıklama yaz.");}
+    if(issue.termDays===null||!Number.isFinite(issue.termDays)){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Termin süresi seç.");}
+    if(!selectedPhotoData){setButtonBusy(submitBtn,false);issueSaveRunning=false;return showToast("Hata fotoğrafı ekle.");}
 
     try{
       await putRecord(ISSUE_STORE,issue);
@@ -306,7 +361,12 @@ function bindForm(){
       showView("homeView");
       showToast("✅ Hata telefona kaydedildi.");
       if(navigator.onLine)syncAllPending();
-    }catch(_){showToast("Kayıt telefona yazılamadı. Tekrar dene.");}
+    }catch(_){
+      showToast("Kayıt telefona yazılamadı. Tekrar dene.");
+    }finally{
+      setButtonBusy(submitBtn,false);
+      issueSaveRunning=false;
+    }
   });
 
   const voiceBtn=document.getElementById("voiceBtn");
@@ -324,15 +384,26 @@ function bindForm(){
 function bindCorrectionForm(){
   document.getElementById("correctionPhotoInput").addEventListener("change",async e=>{
     const f=e.target.files[0];if(!f)return;
+    correctionPhotoProcessing=true;
+    selectedCorrectionPhotoData="";
+    setProcessStatus("correctionPhotoProcessStatus","Fotoğraf hazırlanıyor…");
     try{
       selectedCorrectionPhotoData=await compressImage(f,1280,.68);
       const img=document.getElementById("correctionPhotoPreview");
       img.src=selectedCorrectionPhotoData;img.hidden=false;
-    }catch(_){showToast("Düzeltme fotoğrafı işlenemedi.");}
+      setProcessStatus("correctionPhotoProcessStatus","✓ Fotoğraf hazır","ok");
+    }catch(_){
+      setProcessStatus("correctionPhotoProcessStatus","Fotoğraf işlenemedi.","error");
+      showToast("Düzeltme fotoğrafı işlenemedi.");
+    }finally{
+      correctionPhotoProcessing=false;
+    }
   });
 
   document.getElementById("correctionForm").addEventListener("submit",async e=>{
     e.preventDefault();
+    if(correctionSaveRunning)return;
+    if(correctionPhotoProcessing)return showToast("Fotoğraf hazırlanıyor. Birkaç saniye bekle.");
     if(!correctionTarget)return showToast("Düzeltilecek kayıt seçili değil.");
     const session=loadContractorSession();
     if(!session)return showToast("Taşeron oturumu bulunamadı.");
@@ -340,6 +411,10 @@ function bindCorrectionForm(){
     const note=document.getElementById("correctionNote").value.trim();
     if(!note)return showToast("Düzeltme açıklaması yaz.");
     if(!selectedCorrectionPhotoData)return showToast("Düzeltme fotoğrafı ekle.");
+
+    correctionSaveRunning=true;
+    const submitBtn=e.submitter||document.querySelector("#correctionForm .success-action");
+    setButtonBusy(submitBtn,true,"KAYDEDİLİYOR…");
 
     const correction={
       localId:makeUuid(),
@@ -360,10 +435,15 @@ function bindCorrectionForm(){
       markCachedIssuePending(correction.recordId);
       await refreshCounts();
       showView("contractorPanelView");
-      renderContractorIssues(getCachedContractorIssues(),navigator.onLine?"Önceki liste gösteriliyor.":"Offline liste");
+      renderContractorIssues(getCachedContractorIssues(),navigator.onLine?"Önceki liste gösteriliyor.":"Offline liste").catch(()=>{});
       showToast("✅ Düzeltme kaydedildi.");
       if(navigator.onLine)syncAllPending();
-    }catch(_){showToast("Düzeltme telefona kaydedilemedi.");}
+    }catch(_){
+      showToast("Düzeltme telefona kaydedilemedi.");
+    }finally{
+      setButtonBusy(submitBtn,false);
+      correctionSaveRunning=false;
+    }
   });
 }
 
@@ -372,6 +452,7 @@ function resetIssueForm(){
   selectedPhotoData="";
   const img=document.getElementById("photoPreview");
   img.hidden=true;img.removeAttribute("src");
+  setProcessStatus("photoProcessStatus","");
   updateDuePreview();
 }
 
@@ -381,12 +462,14 @@ function resetCorrectionForm(){
   correctionTarget=null;
   const img=document.getElementById("correctionPhotoPreview");
   img.hidden=true;img.removeAttribute("src");
+  setProcessStatus("correctionPhotoProcessStatus","");
 }
 
 function openCorrection(issue){
   correctionTarget=issue;
   document.getElementById("correctionRecordLabel").textContent=issue.recordId;
   document.getElementById("correctionIssueSummary").innerHTML=contractorIssueSummaryHtml(issue);
+  hydrateSecurePhotos(document.getElementById("correctionIssueSummary"));
   document.getElementById("correctionForm").reset();
   selectedCorrectionPhotoData="";
   const img=document.getElementById("correctionPhotoPreview");
@@ -400,7 +483,7 @@ function contractorIssueSummaryHtml(x){
     <p><b>Açıklama:</b> ${escapeHtml(x.note)}</p>
     <p><b>Öncelik:</b> ${escapeHtml(x.priority)}</p>
     <p><b>Termin:</b> ${formatDate(x.dueDate)}</p>
-    ${x.initialPhotoUrl?`<img src="${escapeAttr(x.initialPhotoUrl)}" alt="İlk hata fotoğrafı"><a class="photo-link" href="${escapeAttr(x.initialPhotoUrl)}" target="_blank" rel="noopener">Fotoğrafı aç</a>`:""}`;
+    ${x.hasInitialPhoto?securePhotoHtml(x.recordId,"initial","İlk hata fotoğrafı"):""}`;
 }
 
 function loadSettings(){
@@ -471,19 +554,37 @@ function showToast(text){
 
 /* ---------- IndexedDB ---------- */
 function openDb(){
+  if(db)return Promise.resolve(db);
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(DB_NAME,DB_VERSION);
     req.onupgradeneeded=()=>{
       const d=req.result;
-      if(!d.objectStoreNames.contains(ISSUE_STORE))d.createObjectStore(ISSUE_STORE,{keyPath:"localId"});
-      if(!d.objectStoreNames.contains(CORRECTION_STORE))d.createObjectStore(CORRECTION_STORE,{keyPath:"localId"});
+      const tx=req.transaction;
+
+      const issueStore=d.objectStoreNames.contains(ISSUE_STORE)
+        ?tx.objectStore(ISSUE_STORE)
+        :d.createObjectStore(ISSUE_STORE,{keyPath:"localId"});
+      if(!issueStore.indexNames.contains("syncStatus"))issueStore.createIndex("syncStatus","syncStatus",{unique:false});
+
+      const correctionStore=d.objectStoreNames.contains(CORRECTION_STORE)
+        ?tx.objectStore(CORRECTION_STORE)
+        :d.createObjectStore(CORRECTION_STORE,{keyPath:"localId"});
+      if(!correctionStore.indexNames.contains("syncStatus"))correctionStore.createIndex("syncStatus","syncStatus",{unique:false});
+      if(!correctionStore.indexNames.contains("recordId"))correctionStore.createIndex("recordId","recordId",{unique:false});
     };
-    req.onsuccess=()=>{db=req.result;resolve();};
+    req.onsuccess=()=>{db=req.result;resolve(db);};
     req.onerror=()=>reject(req.error);
   });
 }
 
-function putRecord(store,obj){
+async function ensureDbReady(){
+  if(db)return db;
+  if(!dbReadyPromise)dbReadyPromise=openDb();
+  return await dbReadyPromise;
+}
+
+async function putRecord(store,obj){
+  await ensureDbReady();
   return new Promise((resolve,reject)=>{
     const tx=db.transaction(store,"readwrite");
     tx.objectStore(store).put(obj);
@@ -492,7 +593,8 @@ function putRecord(store,obj){
   });
 }
 
-function deleteRecord(store,id){
+async function deleteRecord(store,id){
+  await ensureDbReady();
   return new Promise((resolve,reject)=>{
     const tx=db.transaction(store,"readwrite");
     tx.objectStore(store).delete(id);
@@ -501,7 +603,8 @@ function deleteRecord(store,id){
   });
 }
 
-function getAll(store){
+async function getAll(store){
+  await ensureDbReady();
   return new Promise((resolve,reject)=>{
     const tx=db.transaction(store,"readonly");
     const req=tx.objectStore(store).getAll();
@@ -510,15 +613,56 @@ function getAll(store){
   });
 }
 
+async function countByIndex(store,indexName,key){
+  await ensureDbReady();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(store,"readonly");
+    const index=tx.objectStore(store).index(indexName);
+    const req=index.count(IDBKeyRange.only(key));
+    req.onsuccess=()=>resolve(req.result||0);
+    req.onerror=()=>reject(req.error);
+  });
+}
+
+async function getAllByIndex(store,indexName,key){
+  await ensureDbReady();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(store,"readonly");
+    const index=tx.objectStore(store).index(indexName);
+    const req=index.getAll(IDBKeyRange.only(key));
+    req.onsuccess=()=>resolve(req.result||[]);
+    req.onerror=()=>reject(req.error);
+  });
+}
+
+function isViewActive(id){
+  const el=document.getElementById(id);
+  return Boolean(el&&el.classList.contains("active"));
+}
+
 async function getPendingCorrectionForRecord(recordId){
-  const all=await getAll(CORRECTION_STORE);
-  return all.find(x=>x.recordId===recordId&&x.syncStatus!=="synced")||null;
+  await ensureDbReady();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(CORRECTION_STORE,"readonly");
+    const index=tx.objectStore(CORRECTION_STORE).index("recordId");
+    const req=index.getAll(IDBKeyRange.only(recordId));
+    req.onsuccess=()=>resolve((req.result||[]).find(x=>x.syncStatus!=="synced")||null);
+    req.onerror=()=>reject(req.error);
+  });
 }
 
 async function refreshCounts(){
-  const [issues,corrections]=await Promise.all([getAll(ISSUE_STORE),getAll(CORRECTION_STORE)]);
-  const n=issues.filter(x=>x.syncStatus!=="synced").length+corrections.filter(x=>x.syncStatus!=="synced").length;
-  document.getElementById("pendingBadge").textContent=n;
+  try{
+    const [issues,corrections]=await Promise.all([
+      countByIndex(ISSUE_STORE,"syncStatus","pending"),
+      countByIndex(CORRECTION_STORE,"syncStatus","pending")
+    ]);
+    document.getElementById("pendingBadge").textContent=issues+corrections;
+  }catch(_){
+    const [issues,corrections]=await Promise.all([getAll(ISSUE_STORE),getAll(CORRECTION_STORE)]);
+    const n=issues.filter(x=>x.syncStatus!=="synced").length+corrections.filter(x=>x.syncStatus!=="synced").length;
+    document.getElementById("pendingBadge").textContent=n;
+  }
 }
 
 async function renderLists(){
@@ -575,22 +719,27 @@ async function syncAllPending(){
   if(!url)return showToast("Bulut bağlantısı tanımlı değil.");
 
   syncRunning=true;
+  const syncButtons=[document.getElementById("syncBtn"),document.getElementById("pendingSyncBtn")];
+  syncButtons.forEach(b=>setButtonBusy(b,true,"SENKRONİZE EDİLİYOR…"));
+  showToast("Senkronizasyon başladı.");
   try{
     const issueResult=await syncPendingIssues(url);
     const correctionResult=await syncPendingCorrections(url);
     await refreshCounts();
-    await renderLists();
+    if(isViewActive("pendingView")||isViewActive("recordsView"))await renderLists();
     const total=issueResult.total+correctionResult.total;
     const ok=issueResult.ok+correctionResult.ok;
     if(total===0)showToast("Gönderilecek kayıt yok.");
     else showToast(`${ok}/${total} kayıt gönderildi.`);
     if(correctionResult.ok>0&&loadContractorSession())await refreshContractorIssues(false).catch(()=>{});
-  }finally{syncRunning=false;}
+  }finally{
+    syncRunning=false;
+    syncButtons.forEach(b=>setButtonBusy(b,false));
+  }
 }
 
 async function syncPendingIssues(url){
-  const all=await getAll(ISSUE_STORE);
-  const pending=all.filter(x=>x.syncStatus!=="synced");
+  const pending=await getAllByIndex(ISSUE_STORE,"syncStatus","pending");
   let ok=0;
   for(const issue of pending){
     try{
@@ -610,8 +759,7 @@ async function syncPendingIssues(url){
 }
 
 async function syncPendingCorrections(url){
-  const all=await getAll(CORRECTION_STORE);
-  const pending=all.filter(x=>x.syncStatus!=="synced");
+  const pending=await getAllByIndex(CORRECTION_STORE,"syncStatus","pending");
   let ok=0;
   for(const correction of pending){
     try{
@@ -636,12 +784,22 @@ async function syncPendingCorrections(url){
 }
 
 async function apiPost(url,payload){
-  const res=await fetch(url,{
-    method:"POST",
-    headers:{"Content-Type":"text/plain;charset=utf-8"},
-    body:JSON.stringify(payload)
-  });
-  return await res.json();
+  const controller=("AbortController" in window)?new AbortController():null;
+  const timer=controller?setTimeout(()=>controller.abort(),15000):null;
+  try{
+    const res=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify(payload),
+      signal:controller?controller.signal:undefined
+    });
+    return await res.json();
+  }catch(err){
+    if(err&&err.name==="AbortError")throw new Error("Bağlantı zaman aşımına uğradı.");
+    throw err;
+  }finally{
+    if(timer)clearTimeout(timer);
+  }
 }
 
 /* ---------- Contractor auth/panel ---------- */
@@ -669,19 +827,28 @@ function updateContractorHome(){
 }
 
 async function openContractorArea(){
-  if(navigator.onLine)await refreshRemoteConfig(false).catch(()=>{});
   const s=loadContractorSession();
+
   if(!s){
+    // Önce ekranı aç; gerçek listeleri ağdan arka planda yenile.
     showView("contractorLoginView");
+    if(navigator.onLine)refreshRemoteConfig(false).catch(()=>{});
     return;
   }
+
   document.getElementById("contractorPanelTitle").textContent=s.contractor;
   showView("contractorPanelView");
-  await renderContractorIssues(getCachedContractorIssues(),"Telefondaki son liste");
-  if(navigator.onLine)refreshContractorIssues(false);
+
+  // Cache'deki işleri hemen göster; ağ isteği arka planda.
+  renderContractorIssues(getCachedContractorIssues(),"Telefondaki son liste").catch(()=>{});
+  if(navigator.onLine){
+    refreshRemoteConfig(false).catch(()=>{});
+    refreshContractorIssues(false).catch(()=>{});
+  }
 }
 
 async function contractorLogin(){
+  if(contractorLoginRunning)return;
   const contractor=document.getElementById("contractorLoginSelect").value;
   const pin=document.getElementById("contractorPin").value.trim();
   const out=document.getElementById("contractorLoginResult");
@@ -692,6 +859,9 @@ async function contractorLogin(){
   if(!url)return showToast("Bulut bağlantısı tanımlı değil.");
   if(!navigator.onLine)return showToast("İlk giriş için internet gerekli.");
 
+  contractorLoginRunning=true;
+  const loginBtn=document.getElementById("contractorLoginBtn");
+  setButtonBusy(loginBtn,true,"GİRİŞ KONTROL EDİLİYOR…");
   out.textContent="Giriş kontrol ediliyor…";
   try{
     const data=await apiPost(url,{action:"contractorLogin",contractor,pin});
@@ -707,6 +877,9 @@ async function contractorLogin(){
     await refreshContractorIssues(true);
   }catch(err){
     out.textContent="❌ "+String(err.message||err);
+  }finally{
+    setButtonBusy(loginBtn,false);
+    contractorLoginRunning=false;
   }
 }
 
@@ -816,8 +989,8 @@ async function renderContractorIssues(issues,statusText){
       <p><b>Termin:</b> ${formatDate(x.dueDate)}</p>
       <p><b>Durum:</b> ${escapeHtml(x.status)}</p>
       ${x.correctionNote?`<p><b>Son düzeltme:</b> ${escapeHtml(x.correctionNote)}</p>`:""}
-      ${x.initialPhotoUrl?`<img loading="lazy" src="${escapeAttr(x.initialPhotoUrl)}" alt="İlk hata fotoğrafı"><a class="photo-link" href="${escapeAttr(x.initialPhotoUrl)}" target="_blank" rel="noopener">İlk fotoğrafı aç</a>`:""}
-      ${x.correctionPhotoUrl?`<a class="photo-link" href="${escapeAttr(x.correctionPhotoUrl)}" target="_blank" rel="noopener">Son düzeltme fotoğrafını aç</a>`:""}
+      ${x.hasInitialPhoto?securePhotoHtml(x.recordId,"initial","İlk hata fotoğrafı"):""}
+      ${x.hasCorrectionPhoto?securePhotoHtml(x.recordId,"correction","Son düzeltme fotoğrafı"):""}
       <div class="card-actions">
         <button class="card-action" data-correct-record="${escapeAttr(x.recordId)}" ${canCorrect?"":"disabled"}>
           ${waitingStatus?"MEKANİK KONTROLÜ BEKLENİYOR":queued?"GÖNDERİM BEKLİYOR":"🔧 DÜZELTME BİLDİR"}
@@ -825,6 +998,87 @@ async function renderContractorIssues(issues,statusText){
       </div>
     </div>`;
   }).join("");
+  hydrateSecurePhotos(list);
+}
+
+
+function securePhotoHtml(recordId,kind,label){
+  return `<div class="secure-photo" data-secure-photo="1" data-record-id="${escapeAttr(recordId)}" data-kind="${escapeAttr(kind)}">
+    <button type="button" class="photo-load-btn">📷 ${escapeHtml(label)} — GÖSTER</button>
+  </div>`;
+}
+
+function hydrateSecurePhotos(root=document){
+  const boxes=[...root.querySelectorAll('[data-secure-photo="1"]')];
+  if(!boxes.length)return;
+
+  boxes.forEach(box=>{
+    const btn=box.querySelector(".photo-load-btn");
+    if(btn)btn.addEventListener("click",()=>loadSecurePhoto(box));
+  });
+
+  if("IntersectionObserver" in window){
+    const observer=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(entry.isIntersecting){
+          observer.unobserve(entry.target);
+          loadSecurePhoto(entry.target);
+        }
+      });
+    },{rootMargin:"40px"});
+    boxes.forEach((box,i)=>{
+      // İlk iki görünür fotoğraf otomatik; kalanlar görünür oldukça veya kullanıcı dokununca.
+      if(i<2)observer.observe(box);
+      else observer.observe(box);
+    });
+  }
+}
+
+async function loadSecurePhoto(box){
+  if(!box || box.dataset.loading==="1" || box.dataset.loaded==="1")return;
+  const cacheKey=`${box.dataset.recordId}|${box.dataset.kind}`;
+  if(securePhotoCache.has(cacheKey)){
+    const img=document.createElement("img");
+    img.alt=box.dataset.kind==="correction"?"Düzeltme fotoğrafı":"İlk hata fotoğrafı";
+    img.src=securePhotoCache.get(cacheKey);
+    box.replaceChildren(img);
+    box.dataset.loaded="1";
+    return;
+  }
+  const session=loadContractorSession();
+  if(!session)return;
+  const url=apiUrl();
+  if(!url || !navigator.onLine)return;
+
+  box.dataset.loading="1";
+  const btn=box.querySelector(".photo-load-btn");
+  if(btn){btn.disabled=true;btn.textContent="Fotoğraf yükleniyor…";}
+
+  try{
+    const data=await apiPost(url,{
+      action:"contractorImage",
+      contractor:session.contractor,
+      token:session.token,
+      recordId:box.dataset.recordId,
+      kind:box.dataset.kind
+    });
+    if(!data.ok)throw new Error(data.error||"Fotoğraf alınamadı");
+    securePhotoCache.set(cacheKey,data.dataUrl);
+    while(securePhotoCache.size>SECURE_PHOTO_CACHE_LIMIT){
+      securePhotoCache.delete(securePhotoCache.keys().next().value);
+    }
+    const img=document.createElement("img");
+    img.alt=box.dataset.kind==="correction"?"Düzeltme fotoğrafı":"İlk hata fotoğrafı";
+    img.src=data.dataUrl;
+    box.replaceChildren(img);
+    box.dataset.loaded="1";
+  }catch(err){
+    box.innerHTML=`<div class="photo-error">Fotoğraf yüklenemedi.<br>${escapeHtml(String(err.message||err))}<br><button type="button" class="photo-load-btn">TEKRAR DENE</button></div>`;
+    const retry=box.querySelector(".photo-load-btn");
+    if(retry)retry.addEventListener("click",()=>{box.dataset.loading="0";loadSecurePhoto(box);});
+  }finally{
+    box.dataset.loading="0";
+  }
 }
 
 function priorityTag(priority){
@@ -884,22 +1138,58 @@ function formatDateTime(v){
   const d=new Date(v);
   return Number.isNaN(d.getTime())?String(v):d.toLocaleString("tr-TR");
 }
-function compressImage(file,maxWidth,quality){
+async function compressImage(file,maxWidth,quality){
+  let source=null;
+  let width=0,height=0;
+
+  try{
+    if("createImageBitmap" in window){
+      source=await createImageBitmap(file);
+      width=source.width;height=source.height;
+    }else{
+      source=await loadImageFromFile(file);
+      width=source.naturalWidth||source.width;
+      height=source.naturalHeight||source.height;
+    }
+
+    const scale=Math.min(1,maxWidth/width);
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(width*scale));
+    canvas.height=Math.max(1,Math.round(height*scale));
+    const ctx=canvas.getContext("2d",{alpha:false});
+    ctx.drawImage(source,0,0,canvas.width,canvas.height);
+
+    const blob=await new Promise((resolve,reject)=>{
+      canvas.toBlob(b=>b?resolve(b):reject(new Error("Fotoğraf sıkıştırılamadı")),"image/jpeg",quality);
+    });
+
+    if(source&&typeof source.close==="function")source.close();
+    return await blobToDataUrl(blob);
+  }catch(err){
+    if(source&&typeof source.close==="function")source.close();
+    throw err;
+  }
+}
+
+function loadImageFromFile(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=()=>{
       const img=new Image();
-      img.onload=()=>{
-        const scale=Math.min(1,maxWidth/img.width);
-        const canvas=document.createElement("canvas");
-        canvas.width=Math.max(1,Math.round(img.width*scale));
-        canvas.height=Math.max(1,Math.round(img.height*scale));
-        const ctx=canvas.getContext("2d");
-        ctx.drawImage(img,0,0,canvas.width,canvas.height);
-        resolve(canvas.toDataURL("image/jpeg",quality));
-      };
-      img.onerror=reject;img.src=reader.result;
+      img.onload=()=>resolve(img);
+      img.onerror=reject;
+      img.src=reader.result;
     };
-    reader.onerror=reject;reader.readAsDataURL(file);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobToDataUrl(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(blob);
   });
 }

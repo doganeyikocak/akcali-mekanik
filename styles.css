@@ -63,3 +63,152 @@ select{font-weight:700}select:invalid{color:var(--muted)}textarea{resize:vertica
   .home-btn{font-size:18px}.settings-actions{grid-template-columns:1fr}.field-card{padding:12px}.save-btn{font-size:20px}
   .note-tools{align-items:stretch;flex-direction:column}.voice-btn.compact{width:100%}.summary-grid{grid-template-columns:1fr 1fr 1fr}
 }
+.secure-photo{
+  margin-top:10px;
+  min-height:74px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#F1F4F7;
+  border:1px dashed #B9C1C9;
+  border-radius:12px;
+  overflow:hidden;
+}
+.secure-photo img{
+  width:100%;
+  max-height:320px;
+  object-fit:contain;
+  background:#111;
+}
+.photo-load-btn{
+  width:100%;
+  min-height:58px;
+  border:0;
+  background:#E8EDF2;
+  color:#17324D;
+  font-weight:850;
+  font-size:16px;
+}
+.photo-load-btn:disabled{opacity:.7}
+.photo-error{padding:12px;color:#9C1C16;font-weight:800;text-align:center;font-size:14px}
+
+/* ===== v4.2 mobil uyumluluk / uzun isim / hızlı dokunma ===== */
+html{
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+  touch-action:manipulation;
+  overflow-x:hidden;
+}
+body{
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+}
+.container,.view,.field-card,.card,.section-head,.app-header{min-width:0;max-width:100%}
+button,.home-btn,.submit-btn,.small-btn,.small-action,.card-action,.photo-load-btn{
+  touch-action:manipulation;
+  cursor:pointer;
+  user-select:none;
+  -webkit-user-select:none;
+}
+button:active,.home-btn:active,.submit-btn:active,.small-btn:active,.small-action:active,.card-action:active,.photo-load-btn:active{
+  transform:scale(.985);
+}
+button[disabled]{transform:none;cursor:default}
+
+.home-btn{align-items:center}
+.home-btn > span:not(.icon){
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
+  line-height:1.18;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.home-btn.contractor > span:not(.icon){
+  font-size:clamp(15px,4.6vw,20px);
+  letter-spacing:-.01em;
+}
+.icon{flex:0 0 auto}
+.badge{flex:0 0 auto}
+
+.app-header > div{min-width:0;flex:1 1 auto}
+.app-header h1,.app-header p,
+.section-head h2,.subtitle,
+.card h3,.card p,.help,.field-hint,.due-preview{
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.version{flex:0 0 auto}
+.section-head{min-width:0}
+.section-head .grow{min-width:0;flex:1 1 auto}
+.section-head .small-btn,.section-head .back-btn{flex:0 0 auto}
+#contractorPanelTitle{
+  font-size:clamp(18px,5.4vw,24px);
+  line-height:1.08;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
+input,select,textarea{
+  min-width:0;
+  max-width:100%;
+}
+select{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  padding-right:42px;
+}
+option{font-size:16px}
+label{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+.card-action,.submit-btn,.small-action,.small-btn{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.tag{
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.summary-box{min-width:0;padding:10px 6px}
+.summary-box span{display:block;overflow-wrap:anywhere;line-height:1.1}
+.secure-photo{max-width:100%}
+.secure-photo img,.photo-preview,.card img{max-width:100%;height:auto}
+.process-status{min-height:18px;margin:6px 2px 0;font-size:13px;font-weight:800;color:#546E7A}
+.process-status.ok{color:#2E7D32}
+.process-status.error{color:#B42318}
+.busy-label{opacity:.88}
+
+@media(max-width:360px){
+  .container{padding:10px}
+  .app-header{padding-left:10px;padding-right:10px}
+  .app-header h1{font-size:19px}
+  .home-btn,.submit-btn{padding:13px;gap:10px;min-height:68px}
+  .home-btn{font-size:16px}
+  .icon{font-size:25px}
+  .section-head{gap:8px}
+  .back-btn{font-size:24px;padding:9px 11px}
+  .small-btn{padding:9px 10px;font-size:13px}
+  .field-card{padding:10px}
+  label{font-size:16px}
+  input,select,textarea{font-size:17px;padding:12px}
+  .summary-box strong{font-size:23px}
+  .summary-box span{font-size:10px}
+}
+@media(max-width:320px){
+  .container{padding:8px}
+  .app-header h1{font-size:18px}
+  .status{font-size:12px}
+  .version{font-size:11px}
+  .home-btn.contractor > span:not(.icon){font-size:14px}
+  #contractorPanelTitle{font-size:17px}
+  .section-head .small-btn{font-size:12px}
+}

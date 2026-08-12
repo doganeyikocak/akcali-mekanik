@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v4.0</span>
+  <span id="versionLabel" class="version">v4.2</span>
 </header>
 
 <main class="container">
@@ -126,6 +126,7 @@
         <label for="photoInput"><span class="step">10</span> Hata Fotoğrafı</label>
         <input id="photoInput" class="photo-input" type="file" accept="image/*" required>
         <p class="field-hint">📷 Kamera açılmazsa Galeri / Fotoğraflar seçeneğini kullan.</p>
+        <p id="photoProcessStatus" class="process-status" aria-live="polite"></p>
         <img id="photoPreview" class="photo-preview" hidden alt="Hata fotoğrafı önizleme">
       </div>
 
@@ -204,6 +205,7 @@
         <label for="correctionPhotoInput">Düzeltme Fotoğrafı</label>
         <input id="correctionPhotoInput" class="photo-input" type="file" accept="image/*" required>
         <p class="field-hint">Kamera açılmazsa Galeri / Fotoğraflar seçeneğini kullan.</p>
+        <p id="correctionPhotoProcessStatus" class="process-status" aria-live="polite"></p>
         <img id="correctionPhotoPreview" class="photo-preview" hidden alt="Düzeltme fotoğrafı önizleme">
       </div>
 
