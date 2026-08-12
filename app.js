@@ -1,4 +1,4 @@
-const APP_VERSION="4.2.1";
+const APP_VERSION="4.2.2";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -33,7 +33,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v4.2.1";
+  document.getElementById("versionLabel").textContent="v4.2.2";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -500,17 +500,17 @@ async function testApi(){
   if(!url){out.textContent="Bulut bağlantısı boş.";return;}
   out.textContent="Bağlantı test ediliyor…";
   try{
-    const res=await fetch(url+"?action=health&ts="+Date.now(),{cache:"no-store"});
-    const data=await res.json();
+    const data=await apiJsonp(url,{action:"health"},12000);
     out.textContent=data.ok?`✅ Bulut bağlantısı çalışıyor. Backend ${data.version||""}`:"❌ Sunucu cevap verdi ama hata var.";
-  }catch(_){out.textContent="❌ Bağlantı kurulamadı. URL ve yayın yetkisini kontrol et.";}
+  }catch(_){
+    out.textContent="❌ Bağlantı kurulamadı. URL ve yayın yetkisini kontrol et.";
+  }
 }
 
 async function refreshRemoteConfig(showResult=false){
   const url=apiUrl();if(!url)return;
   try{
-    const res=await fetch(url+"?action=config&ts="+Date.now(),{cache:"no-store"});
-    const data=await res.json();
+    const data=await apiJsonp(url,{action:"config"},12000);
     if(!data.ok||!data.config)throw new Error(data.error||"config");
     currentConfig=sanitizeConfig(data.config);
     localStorage.setItem("cachedConfig",JSON.stringify(currentConfig));
@@ -603,6 +603,16 @@ async function deleteRecord(store,id){
   });
 }
 
+async function getRecord(store,id){
+  await ensureDbReady();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(store,"readonly");
+    const req=tx.objectStore(store).get(id);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+
 async function getAll(store){
   await ensureDbReady();
   return new Promise((resolve,reject)=>{
@@ -690,6 +700,8 @@ function renderLocalCards(id,items){
         <p><b>Tarih:</b> ${formatDateTime(x.createdAt)}</p>
         ${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}
         <span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>
+        ${x.syncStatus!=="synced"?'<div class="sync-note">Gönderimi iptal edersen bu telefondaki bekleyen düzeltme bir daha gönderilmez.</div>':""}
+        ${x.syncStatus!=="synced"?`<button type="button" class="cancel-send-btn" data-cancel-send="1" data-kind="correction" data-local-id="${escapeAttr(x.localId)}">GÖNDERİMİ İPTAL ET</button>`:""}
         ${x.photoData?`<img src="${x.photoData}" alt="Düzeltme fotoğrafı">`:""}
       </div>`;
     }
@@ -706,9 +718,235 @@ function renderLocalCards(id,items){
       ${x.cloudId?`<p><b>Kayıt No:</b> ${escapeHtml(x.cloudId)}</p>`:""}
       ${x.lastError?`<p><b>Son hata:</b> ${escapeHtml(x.lastError)}</p>`:""}
       <span class="tag ${x.syncStatus==="synced"?"synced":"pending"}">${x.syncStatus==="synced"?"Gönderildi":"Gönderilmeyi bekliyor"}</span>
+      ${x.syncStatus!=="synced"?'<div class="sync-note">Gönderimi iptal edersen bu telefondaki bekleyen hata bildirimi bir daha gönderilmez.</div>':""}
+      ${x.syncStatus!=="synced"?`<button type="button" class="cancel-send-btn" data-cancel-send="1" data-kind="issue" data-local-id="${escapeAttr(x.localId)}">GÖNDERİMİ İPTAL ET</button>`:""}
       ${x.photoData?`<img src="${x.photoData}" alt="Hata fotoğrafı">`:""}
     </div>`;
   }).join("");
+
+  el.querySelectorAll("[data-cancel-send]").forEach(btn=>{
+    btn.addEventListener("click",()=>cancelPendingSend(btn));
+  });
+}
+
+
+/* ---------- Reliable transport / cloud confirmation ---------- */
+function sleepMs(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+
+function isTransportError(err){
+  const msg=String((err&&err.message)||err||"").toLowerCase();
+  return [
+    "load failed",
+    "failed to fetch",
+    "networkerror",
+    "network request failed",
+    "cevabı gecikti",
+    "zaman aşım",
+    "fetch"
+  ].some(x=>msg.includes(x));
+}
+
+function apiJsonp(url,params={},timeoutMs=12000){
+  return new Promise((resolve,reject)=>{
+    const callback="__akcaliCb_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+    const script=document.createElement("script");
+    let done=false;
+    let timer=null;
+
+    const cleanup=()=>{
+      if(done)return;
+      done=true;
+      if(timer)clearTimeout(timer);
+      try{delete window[callback];}catch(_){window[callback]=undefined;}
+      script.remove();
+    };
+
+    window[callback]=(data)=>{
+      cleanup();
+      resolve(data);
+    };
+
+    const qs=new URLSearchParams({...params,callback,_ts:String(Date.now())});
+    script.src=url+(url.includes("?")?"&":"?")+qs.toString();
+    script.async=true;
+    script.onerror=()=>{
+      cleanup();
+      reject(new Error("Sunucu doğrulama bağlantısı kurulamadı."));
+    };
+
+    timer=setTimeout(()=>{
+      cleanup();
+      reject(new Error("Sunucu doğrulaması zaman aşımına uğradı."));
+    },timeoutMs);
+
+    document.head.appendChild(script);
+  });
+}
+
+async function verifyCloudRecord(url,kind,localId){
+  try{
+    const data=await apiJsonp(url,{action:"syncStatus",kind,localId},12000);
+    if(!data||!data.ok)return {known:false,exists:false};
+    return {
+      known:true,
+      exists:Boolean(data.exists),
+      recordId:String(data.recordId||""),
+      status:String(data.status||"")
+    };
+  }catch(_){
+    return {known:false,exists:false};
+  }
+}
+
+async function postNoCors(url,payload,timeoutMs=120000){
+  const controller=("AbortController" in window)?new AbortController():null;
+  const timer=controller?setTimeout(()=>controller.abort(),timeoutMs):null;
+  try{
+    await fetch(url,{
+      method:"POST",
+      mode:"no-cors",
+      headers:{"Content-Type":"text/plain"},
+      body:JSON.stringify(payload),
+      signal:controller?controller.signal:undefined
+    });
+    return true;
+  }finally{
+    if(timer)clearTimeout(timer);
+  }
+}
+
+async function verifyWithPolling(url,kind,localId){
+  const waits=[0,700,1400,2500,4000,6500,9000];
+  for(const wait of waits){
+    if(wait)await sleepMs(wait);
+    const status=await verifyCloudRecord(url,kind,localId);
+    if(status.known&&status.exists)return status;
+  }
+  return {known:true,exists:false};
+}
+
+async function reliableCreateIssue(url,issue){
+  let status=await verifyCloudRecord(url,"issue",issue.localId);
+  if(status.known&&status.exists){
+    return {ok:true,recordId:status.recordId,verified:true};
+  }
+
+  try{
+    const data=await apiPost(url,{action:"createIssue",issue},120000);
+    if(data&&data.ok)return data;
+    throw new Error((data&&data.error)||"Sunucu hatası");
+  }catch(err){
+    if(!isTransportError(err))throw err;
+
+    status=await verifyWithPolling(url,"issue",issue.localId);
+    if(status.exists)return {ok:true,recordId:status.recordId,verified:true};
+
+    await postNoCors(url,{action:"createIssue",issue},120000);
+    status=await verifyWithPolling(url,"issue",issue.localId);
+    if(status.exists)return {ok:true,recordId:status.recordId,verified:true};
+
+    throw new Error("Sunucuda kayıt doğrulanamadı. Kayıt telefonda güvende; tekrar deneyebilirsin.");
+  }
+}
+
+async function reliableSubmitCorrection(url,correction){
+  let status=await verifyCloudRecord(url,"correction",correction.localId);
+  if(status.known&&status.exists){
+    return {ok:true,recordId:status.recordId||correction.recordId,status:status.status||"Kontrol Bekliyor",verified:true};
+  }
+
+  const payload={
+    action:"submitCorrection",
+    contractor:correction.contractor,
+    token:correction.token,
+    correction
+  };
+
+  try{
+    const data=await apiPost(url,payload,120000);
+    if(data&&data.ok)return data;
+    throw new Error((data&&data.error)||"Sunucu hatası");
+  }catch(err){
+    if(!isTransportError(err))throw err;
+
+    status=await verifyWithPolling(url,"correction",correction.localId);
+    if(status.exists){
+      return {ok:true,recordId:status.recordId||correction.recordId,status:status.status||"Kontrol Bekliyor",verified:true};
+    }
+
+    await postNoCors(url,payload,120000);
+    status=await verifyWithPolling(url,"correction",correction.localId);
+    if(status.exists){
+      return {ok:true,recordId:status.recordId||correction.recordId,status:status.status||"Kontrol Bekliyor",verified:true};
+    }
+
+    throw new Error("Düzeltme sunucuda doğrulanamadı. Kayıt telefonda güvende.");
+  }
+}
+
+async function cancelPendingSend(btn){
+  if(!btn||btn.disabled)return;
+
+  const kind=String(btn.dataset.kind||"");
+  const localId=String(btn.dataset.localId||"");
+  const store=kind==="correction"?CORRECTION_STORE:ISSUE_STORE;
+  if(!localId)return;
+
+  btn.disabled=true;
+  const original=btn.textContent;
+  btn.textContent="KONTROL EDİLİYOR…";
+
+  try{
+    const record=await getRecord(store,localId);
+    if(!record){
+      await renderLists();
+      await refreshCounts();
+      return;
+    }
+
+    if(navigator.onLine){
+      const url=apiUrl();
+      if(url){
+        const cloud=await verifyCloudRecord(url,kind,localId);
+        if(cloud.known&&cloud.exists){
+          if(kind==="issue"){
+            record.syncStatus="synced";
+            record.cloudId=cloud.recordId||record.cloudId||"";
+            record.lastError="";
+            await putRecord(ISSUE_STORE,record);
+          }else{
+            record.syncStatus="synced";
+            record.lastError="";
+            await putRecord(CORRECTION_STORE,record);
+            updateCachedIssueStatus(record.recordId,cloud.status||"Kontrol Bekliyor");
+          }
+
+          await refreshCounts();
+          await renderLists();
+          showToast("Kayıt buluta zaten ulaşmış. Telefon kuyruğu temizlendi.");
+          return;
+        }
+      }
+    }
+
+    const what=kind==="correction"?"düzeltme bildirimi":"hata bildirimi";
+    const confirmed=window.confirm(
+      `${what} henüz bulutta doğrulanmadı.\n\nGönderimi iptal edersen bu telefondaki bekleyen kayıt silinecek ve daha sonra gönderilmeyecek.\n\nDevam edilsin mi?`
+    );
+    if(!confirmed)return;
+
+    await deleteRecord(store,localId);
+    if(kind==="correction"&&record.recordId)clearCachedIssuePending(record.recordId);
+
+    await refreshCounts();
+    await renderLists();
+    showToast("Gönderim iptal edildi. Bekleyen kayıt telefondan silindi.");
+  }catch(err){
+    showToast("İptal işlemi yapılamadı: "+String(err.message||err));
+  }finally{
+    btn.disabled=false;
+    btn.textContent=original;
+  }
 }
 
 /* ---------- Sync ---------- */
@@ -743,7 +981,7 @@ async function syncPendingIssues(url){
   let ok=0;
   for(const issue of pending){
     try{
-      const data=await apiPost(url,{action:"createIssue",issue},120000);
+      const data=await reliableCreateIssue(url,issue);
       if(!data.ok)throw new Error(data.error||"Sunucu hatası");
       issue.syncStatus="synced";
       issue.cloudId=data.recordId||issue.cloudId||"";
@@ -763,12 +1001,7 @@ async function syncPendingCorrections(url){
   let ok=0;
   for(const correction of pending){
     try{
-      const data=await apiPost(url,{
-        action:"submitCorrection",
-        contractor:correction.contractor,
-        token:correction.token,
-        correction
-      },120000);
+      const data=await reliableSubmitCorrection(url,correction);
       if(!data.ok)throw new Error(data.error||"Sunucu hatası");
       correction.syncStatus="synced";
       correction.lastError="";
@@ -949,6 +1182,15 @@ function markCachedIssuePending(recordId){
   const issues=getCachedContractorIssues();
   const x=issues.find(i=>i.recordId===recordId);
   if(x){x.localCorrectionPending=true;saveCachedContractorIssues(issues);}
+}
+
+function clearCachedIssuePending(recordId){
+  const issues=getCachedContractorIssues();
+  const x=issues.find(i=>i.recordId===recordId);
+  if(x){
+    x.localCorrectionPending=false;
+    saveCachedContractorIssues(issues);
+  }
 }
 
 async function renderContractorIssues(issues,statusText){

@@ -212,3 +212,31 @@ label{min-width:0;max-width:100%;overflow-wrap:anywhere}
   #contractorPanelTitle{font-size:17px}
   .section-head .small-btn{font-size:12px}
 }
+
+/* ===== v4.2.2: gönderim doğrulama / iptal ===== */
+.cancel-send-btn{
+  width:100%;
+  min-height:52px;
+  margin-top:12px;
+  border:2px solid #B42318;
+  border-radius:12px;
+  background:#FFF;
+  color:#B42318;
+  font-size:15px;
+  font-weight:900;
+  letter-spacing:.01em;
+  touch-action:manipulation;
+}
+.cancel-send-btn:active{transform:scale(.985)}
+.cancel-send-btn:disabled{opacity:.65;transform:none}
+.sync-note{
+  margin-top:8px;
+  padding:9px 10px;
+  border-radius:10px;
+  background:#F3F6F9;
+  color:#526170;
+  font-size:13px;
+  font-weight:750;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}

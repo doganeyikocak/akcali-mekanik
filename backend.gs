@@ -1,4 +1,4 @@
-const BACKEND_VERSION="4.0.0";
+const BACKEND_VERSION="4.2.2";
 const SHEET_NAME="ANA TAKİP";
 const DEFINITIONS_SHEET="TANIMLAR";
 const CORRECTION_LOG_SHEET="DÜZELTME GEÇMİŞİ";
@@ -33,11 +33,22 @@ function spreadsheet_(){
 function doGet(e){
   try{
     const action=(e&&e.parameter&&e.parameter.action)||"health";
-    if(action==="health")return json_({ok:true,service:"Akçalı Mekanik",version:BACKEND_VERSION,time:new Date().toISOString()});
-    if(action==="config")return json_({ok:true,config:getConfig_()});
-    return json_({ok:false,error:"Bilinmeyen işlem"});
+
+    if(action==="health"){
+      return response_(e,{ok:true,service:"Akçalı Mekanik",version:BACKEND_VERSION,time:new Date().toISOString()});
+    }
+
+    if(action==="config"){
+      return response_(e,{ok:true,config:getConfig_()});
+    }
+
+    if(action==="syncStatus"){
+      return response_(e,syncStatus_(e));
+    }
+
+    return response_(e,{ok:false,error:"Bilinmeyen işlem"});
   }catch(err){
-    return json_({ok:false,error:String(err.message||err)});
+    return response_(e,{ok:false,error:String(err.message||err)});
   }
 }
 
@@ -48,6 +59,7 @@ function doPost(e){
 
     if(action==="contractorLogin")return json_(contractorLogin_(payload));
     if(action==="contractorIssues")return json_(contractorIssues_(payload));
+    if(action==="contractorImage")return json_(contractorImage_(payload));
 
     if(action==="createIssue"){
       return withLock_(()=>createIssue_(payload.issue));
@@ -68,6 +80,50 @@ function withLock_(fn){
   lock.waitLock(30000);
   try{return fn();}
   finally{lock.releaseLock();}
+}
+
+
+/* ---------- SYNC STATUS / ACK ---------- */
+function syncStatus_(e){
+  const p=(e&&e.parameter)||{};
+  const kind=String(p.kind||"issue").trim();
+  const localId=String(p.localId||"").trim();
+
+  if(!localId || localId.length>120){
+    return {ok:false,error:"Geçersiz yerel kayıt kimliği."};
+  }
+
+  const ss=spreadsheet_();
+
+  if(kind==="issue"){
+    const sheet=ensureTrackingSheet_(ss);
+    const row=findByColumn_(sheet,COL.LOCAL_ID,localId,5);
+    if(!row)return {ok:true,exists:false,kind:"issue"};
+
+    return {
+      ok:true,
+      exists:true,
+      kind:"issue",
+      recordId:String(sheet.getRange(row,COL.RECORD_ID).getDisplayValue()||""),
+      status:String(sheet.getRange(row,COL.STATUS).getDisplayValue()||"")
+    };
+  }
+
+  if(kind==="correction"){
+    const log=ensureCorrectionLogSheet_(ss);
+    const row=findByColumn_(log,6,localId,2);
+    if(!row)return {ok:true,exists:false,kind:"correction"};
+
+    return {
+      ok:true,
+      exists:true,
+      kind:"correction",
+      recordId:String(log.getRange(row,1).getDisplayValue()||""),
+      status:String(log.getRange(row,8).getDisplayValue()||"Kontrol Bekliyor")
+    };
+  }
+
+  return {ok:false,error:"Geçersiz kayıt türü."};
 }
 
 /* ---------- CONFIG ---------- */
@@ -255,12 +311,12 @@ function contractorIssues_(payload){
       location:String(r[COL.LOCATION-1]||""),
       issueType:String(r[COL.ISSUE_TYPE-1]||""),
       note:String(r[COL.NOTE-1]||""),
-      initialPhotoUrl:String(r[COL.INITIAL_PHOTO-1]||""),
+      hasInitialPhoto:Boolean(String(r[COL.INITIAL_PHOTO-1]||"").trim()),
       priority:String(r[COL.PRIORITY-1]||"Normal"),
       dueDate:iso_(due),
       status:status||"Taşerona Atandı",
       correctionNote:String(r[COL.CORRECTION_NOTE-1]||""),
-      correctionPhotoUrl:String(r[COL.CORRECTION_PHOTO-1]||""),
+      hasCorrectionPhoto:Boolean(String(r[COL.CORRECTION_PHOTO-1]||"").trim()),
       correctionAt:iso_(r[COL.CORRECTION_AT-1]),
       overdueDays:overdueDays_(due,status)
     });
@@ -283,6 +339,56 @@ function overdueDays_(due,status){
   const a=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   const b=new Date(due.getFullYear(),due.getMonth(),due.getDate());
   return Math.max(0,Math.floor((a-b)/86400000));
+}
+
+
+/* ---------- SECURE CONTRACTOR IMAGE ---------- */
+function contractorImage_(payload){
+  const contractor=String(payload.contractor||"").trim();
+  validateContractorToken_(contractor,payload.token);
+
+  const recordId=String(payload.recordId||"").trim();
+  const kind=String(payload.kind||"initial").trim();
+  if(!recordId)throw new Error("Kayıt numarası eksik.");
+  if(!["initial","correction"].includes(kind))throw new Error("Geçersiz fotoğraf türü.");
+
+  const ss=spreadsheet_();
+  const sheet=ensureTrackingSheet_(ss);
+  const row=findByColumn_(sheet,COL.RECORD_ID,recordId,5);
+  if(!row)throw new Error("Kayıt bulunamadı.");
+
+  const assigned=String(sheet.getRange(row,COL.CONTRACTOR).getDisplayValue()||"").trim();
+  if(assigned!==contractor)throw new Error("Bu fotoğraf bu firmaya ait değil.");
+
+  const col=kind==="correction"?COL.CORRECTION_PHOTO:COL.INITIAL_PHOTO;
+  const stored=String(sheet.getRange(row,col).getDisplayValue()||"").trim();
+  if(!stored)throw new Error("Fotoğraf bulunamadı.");
+
+  const fileId=extractDriveFileId_(stored);
+  if(!fileId)throw new Error("Fotoğraf dosya kimliği bulunamadı.");
+
+  const file=DriveApp.getFileById(fileId);
+  const blob=file.getBlob();
+  const mime=blob.getContentType()||"image/jpeg";
+  const base64=Utilities.base64Encode(blob.getBytes());
+
+  return {ok:true,dataUrl:"data:"+mime+";base64,"+base64};
+}
+
+function extractDriveFileId_(value){
+  value=String(value||"").trim();
+  if(/^[A-Za-z0-9_-]{20,}$/.test(value))return value;
+
+  let m=value.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  if(m)return m[1];
+
+  m=value.match(/\/d\/([A-Za-z0-9_-]+)/);
+  if(m)return m[1];
+
+  m=value.match(/\/file\/d\/([A-Za-z0-9_-]+)/);
+  if(m)return m[1];
+
+  return "";
 }
 
 /* ---------- CORRECTION ---------- */
@@ -394,9 +500,7 @@ function savePhoto_(name,dataUrl){
   const folder=folders.hasNext()?folders.next():DriveApp.createFolder(DRIVE_FOLDER_NAME);
   const file=folder.createFile(blob);
 
-  try{file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(_){}
-
-  return "https://drive.google.com/uc?export=view&id="+file.getId();
+  return "https://drive.google.com/file/d/"+file.getId()+"/view";
 }
 
 /* ---------- HELPERS ---------- */
@@ -413,6 +517,20 @@ function iso_(v){
   return isNaN(d.getTime())?String(v):d.toISOString();
 }
 
+function response_(e,obj){
+  const callback=String((e&&e.parameter&&e.parameter.callback)||"").trim();
+
+  if(callback && /^[A-Za-z_$][0-9A-Za-z_$\.]{0,120}$/.test(callback)){
+    return ContentService
+      .createTextOutput(callback+"("+JSON.stringify(obj)+");")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function json_(obj){
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  return response_(null,obj);
 }
