@@ -240,3 +240,74 @@ label{min-width:0;max-width:100%;overflow-wrap:anywhere}
   line-height:1.35;
   overflow-wrap:anywhere;
 }
+
+
+/* ===== v4.2.3 Android dikey kaydırma düzeltmesi ===== */
+html{
+  height:auto !important;
+  min-height:100% !important;
+  overflow-x:hidden !important;
+  overflow-y:auto !important;
+  touch-action:auto !important;
+  overscroll-behavior-y:auto !important;
+}
+body{
+  height:auto !important;
+  min-height:100vh !important;
+  min-height:100svh !important;
+  overflow-x:hidden !important;
+  overflow-y:auto !important;
+  touch-action:pan-y pinch-zoom !important;
+  overscroll-behavior-y:auto !important;
+  -webkit-overflow-scrolling:touch;
+}
+main.container{
+  height:auto !important;
+  min-height:0 !important;
+  overflow:visible !important;
+  touch-action:pan-y pinch-zoom !important;
+}
+.view,
+.view.active{
+  height:auto !important;
+  max-height:none !important;
+  overflow:visible !important;
+}
+.view.active{
+  touch-action:pan-y pinch-zoom !important;
+}
+.scroll-view,
+.scroll-form,
+#newView,
+#newView form,
+#correctionView,
+#correctionView form{
+  height:auto !important;
+  max-height:none !important;
+  overflow:visible !important;
+  touch-action:pan-y pinch-zoom !important;
+}
+#newView .field-card,
+#correctionView .field-card{
+  touch-action:pan-y pinch-zoom !important;
+}
+input,
+select,
+textarea,
+.photo-input{
+  touch-action:auto !important;
+}
+button{
+  touch-action:manipulation;
+}
+#newView,
+#correctionView{
+  padding-bottom:calc(120px + env(safe-area-inset-bottom));
+}
+#issueForm,
+#correctionForm{
+  padding-bottom:24px;
+}
+@supports not (height:100svh){
+  body{min-height:100vh !important;}
+}

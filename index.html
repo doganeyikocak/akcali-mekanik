@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v4.2.2</span>
+  <span id="versionLabel" class="version">v4.2.3</span>
 </header>
 
 <main class="container">
@@ -61,7 +61,7 @@
     </button>
   </section>
 
-  <section id="newView" class="view">
+  <section id="newView" class="view scroll-view">
     <div class="section-head">
       <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
       <div>
@@ -70,7 +70,7 @@
       </div>
     </div>
 
-    <form id="issueForm">
+    <form id="issueForm" class="scroll-form">
       <div class="field-card">
         <label for="blockSelect"><span class="step">1</span> Blok</label>
         <select id="blockSelect" required><option value="">Blok seç</option></select>
@@ -183,7 +183,7 @@
     <div id="contractorIssueList" class="card-list"></div>
   </section>
 
-  <section id="correctionView" class="view">
+  <section id="correctionView" class="view scroll-view">
     <div class="section-head">
       <button id="correctionBackBtn" class="back-btn" aria-label="Geri">←</button>
       <div>
@@ -194,7 +194,7 @@
 
     <div id="correctionIssueSummary" class="card"></div>
 
-    <form id="correctionForm">
+    <form id="correctionForm" class="scroll-form">
       <div class="field-card">
         <label for="correctionNote">Düzeltme Açıklaması</label>
         <textarea id="correctionNote" rows="3" maxlength="250" placeholder="Örn: Eksik kelepçeler tamamlandı" required></textarea>

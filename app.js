@@ -1,4 +1,4 @@
-const APP_VERSION="4.2.2";
+const APP_VERSION="4.2.3";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -33,7 +33,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v4.2.2";
+  document.getElementById("versionLabel").textContent="v4.2.3";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -41,6 +41,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   bindCorrectionForm();
   bindButtons();
   bindKeyboardDismiss();
+  bindMobileScrollSafety();
   loadSettings();
   renderSelects();
   updateConnectionStatus();
@@ -174,6 +175,39 @@ function bindKeyboardDismiss(){
     if(e.target.closest("input,textarea,select,button,label"))return;
     a.blur();
   });
+}
+
+
+function bindMobileScrollSafety(){
+  const fields=document.querySelectorAll("#newView input,#newView select,#newView textarea,#correctionView input,#correctionView select,#correctionView textarea");
+
+  fields.forEach(el=>{
+    el.addEventListener("focus",()=>{
+      setTimeout(()=>{
+        try{
+          const r=el.getBoundingClientRect();
+          const vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+          if(r.bottom>vh-24 || r.top<70){
+            el.scrollIntoView({block:"center",inline:"nearest",behavior:"auto"});
+          }
+        }catch(_){}
+      },180);
+    });
+  });
+
+  if(window.visualViewport){
+    let lastHeight=window.visualViewport.height;
+    window.visualViewport.addEventListener("resize",()=>{
+      const h=window.visualViewport.height;
+      if(h>lastHeight+80){
+        requestAnimationFrame(()=>{
+          document.documentElement.style.overflowY="auto";
+          document.body.style.overflowY="auto";
+        });
+      }
+      lastHeight=h;
+    });
+  }
 }
 
 function bindNavigation(){
