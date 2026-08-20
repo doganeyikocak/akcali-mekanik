@@ -1,4 +1,4 @@
-const APP_VERSION="4.2.3";
+const APP_VERSION="5.0.0";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -7,7 +7,8 @@ const DEFAULTS={
   priorities:["Kritik","Yüksek","Normal","Düşük"],
   contractors:["Taşeron 1","Taşeron 2","Taşeron 3"],
   foremen:["Formen 1","Formen 2","Formen 3"],
-  terms:["1","2","3","5","7"]
+  terms:["1","2","3","5","7"],
+  officeUsers:[]
 };
 
 const DB_NAME="akcali-mekanik-db";
@@ -26,6 +27,11 @@ let dbReadyPromise=null;
 let issueSaveRunning=false;
 let correctionSaveRunning=false;
 let contractorLoginRunning=false;
+let officeLoginRunning=false;
+let officeRefreshRunning=false;
+let officeDecisionRunning=false;
+let officeCurrentFilter="all";
+let officeCurrentIssue=null;
 let photoProcessing=false;
 let correctionPhotoProcessing=false;
 const securePhotoCache=new Map();
@@ -33,7 +39,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v4.2.3";
+  document.getElementById("versionLabel").textContent="v5.0";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -47,6 +53,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   updateConnectionStatus();
   showInstallHint();
   updateContractorHome();
+  updateOfficeHome();
   registerServiceWorker();
 
   dbReadyPromise=openDb();
@@ -70,6 +77,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
     refreshRemoteConfig().catch(()=>{});
     await syncAllPending();
     if(loadContractorSession())refreshContractorIssues(false).catch(()=>{});
+    if(loadOfficeSession())refreshOfficeDashboard(false).catch(()=>{});
   });
   window.addEventListener("offline",updateConnectionStatus);
 });
@@ -154,6 +162,7 @@ function bindKeyboardDismiss(){
           e.preventDefault();
           el.blur();
           if(el.id==="contractorPin")contractorLogin();
+          if(el.id==="officePin")officeLogin();
         }
       });
     }
@@ -179,7 +188,7 @@ function bindKeyboardDismiss(){
 
 
 function bindMobileScrollSafety(){
-  const fields=document.querySelectorAll("#newView input,#newView select,#newView textarea,#correctionView input,#correctionView select,#correctionView textarea");
+  const fields=document.querySelectorAll("#newView input,#newView select,#newView textarea,#correctionView input,#correctionView select,#correctionView textarea,#officeLoginView input,#officeLoginView select,#officeDetailView input,#officeDetailView select,#officeDetailView textarea");
 
   fields.forEach(el=>{
     el.addEventListener("focus",()=>{
@@ -252,6 +261,16 @@ function bindButtons(){
   document.getElementById("syncBtn").onclick=syncAllPending;
   document.getElementById("pendingSyncBtn").onclick=syncAllPending;
   document.getElementById("contractorHomeBtn").onclick=openContractorArea;
+  document.getElementById("officeHomeBtn").onclick=openOfficeArea;
+  document.getElementById("officeLoginBtn").onclick=officeLogin;
+  document.getElementById("officeLogoutBtn").onclick=officeLogout;
+  document.getElementById("refreshOfficeBtn").onclick=()=>refreshOfficeDashboard(true);
+  document.getElementById("officeDetailBackBtn").onclick=()=>showView("officePanelView");
+  document.getElementById("officeDecisionTerm").addEventListener("change",updateOfficeDuePreview);
+  document.getElementById("officeCloseBtn").onclick=()=>officeDecision("close");
+  document.getElementById("officeRejectBtn").onclick=()=>officeDecision("reject");
+  document.getElementById("officeNewDueBtn").onclick=()=>officeDecision("newDue");
+
   document.getElementById("contractorLoginBtn").onclick=contractorLogin;
   document.getElementById("contractorLogoutBtn").onclick=contractorLogout;
   document.getElementById("refreshContractorBtn").onclick=()=>refreshContractorIssues(true);
@@ -285,6 +304,24 @@ function bindButtons(){
     if(queued)return showToast("Bu kayıt için telefonda gönderilmeyi bekleyen düzeltme var.");
     openCorrection(issue);
   });
+
+  document.getElementById("officeIssueList").addEventListener("click",e=>{
+    const btn=e.target.closest("[data-office-record]");
+    if(!btn)return;
+    const issue=getCachedOfficeIssues().find(x=>x.recordId===btn.dataset.officeRecord);
+    if(!issue)return showToast("Kayıt bulunamadı. Dashboard'u yenile.");
+    openOfficeDetail(issue);
+  });
+
+  document.querySelectorAll("[data-office-filter]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      officeCurrentFilter=btn.dataset.officeFilter||"all";
+      document.querySelectorAll("#officeFilterBar [data-office-filter]").forEach(x=>x.classList.toggle("active",x.dataset.officeFilter===officeCurrentFilter));
+      renderOfficeIssues(getCachedOfficeIssues());
+      const list=document.getElementById("officeIssueList");
+      if(list)list.scrollIntoView({block:"start",behavior:"auto"});
+    });
+  });
 }
 
 function renderSelects(){
@@ -295,7 +332,9 @@ function renderSelects(){
   fillSelect("contractorSelect",currentConfig.contractors,"Taşeron seç");
   fillSelect("foremanSelect",currentConfig.foremen,"Formen seç");
   fillSelect("contractorLoginSelect",currentConfig.contractors,"Firma seç");
+  fillSelect("officeLoginSelect",currentConfig.officeUsers||[],"Kullanıcı seç");
   fillTermSelect();
+  fillOfficeDecisionTerm();
 }
 
 function fillSelect(id,items,placeholder){
@@ -314,6 +353,27 @@ function fillTermSelect(){
   s.innerHTML='<option value="" selected disabled>Termin seç</option>'+
     nums.map(n=>`<option value="${n}">${n===0?"Aynı Gün":n+" Gün"}</option>`).join("");
   if(old&&nums.includes(Number(old)))s.value=old;
+}
+
+
+function fillOfficeDecisionTerm(){
+  const s=document.getElementById("officeDecisionTerm");
+  if(!s)return;
+  const old=s.value;
+  const nums=Array.from(new Set((currentConfig.terms||[]).map(parseTermDays).filter(n=>Number.isFinite(n)&&n>=0)));
+  s.innerHTML='<option value="">Termin seç</option>'+
+    nums.map(n=>`<option value="${n}">${n===0?"Aynı Gün":n+" Gün"}</option>`).join("");
+  if(old&&nums.includes(Number(old)))s.value=old;
+}
+
+function updateOfficeDuePreview(){
+  const s=document.getElementById("officeDecisionTerm");
+  const el=document.getElementById("officeDecisionDuePreview");
+  if(!s||!el)return;
+  if(s.value===""){el.textContent="Red / yeni termin işleminde kullanılır.";return;}
+  const d=new Date();
+  d.setDate(d.getDate()+Number(s.value));
+  el.textContent=`Yeni termin: ${d.toLocaleDateString("tr-TR")}`;
 }
 
 function parseTermDays(v){
@@ -569,7 +629,8 @@ function sanitizeConfig(c){
     priorities:clean("priorities"),
     contractors:clean("contractors"),
     foremen:clean("foremen"),
-    terms:clean("terms")
+    terms:clean("terms"),
+    officeUsers:clean("officeUsers")
   };
 }
 
@@ -1070,6 +1131,406 @@ async function apiPost(url,payload,timeoutMs=20000){
 }
 
 /* ---------- Contractor auth/panel ---------- */
+
+/* ---------- MECHANICAL OFFICE ---------- */
+function saveOfficeSession(session,remember){
+  clearOfficeSession();
+  (remember?localStorage:sessionStorage).setItem("officeSession",JSON.stringify(session));
+}
+
+function loadOfficeSession(){
+  try{
+    const raw=localStorage.getItem("officeSession")||sessionStorage.getItem("officeSession");
+    return raw?JSON.parse(raw):null;
+  }catch(_){return null;}
+}
+
+function clearOfficeSession(){
+  localStorage.removeItem("officeSession");
+  sessionStorage.removeItem("officeSession");
+}
+
+function updateOfficeHome(){
+  const s=loadOfficeSession();
+  const el=document.getElementById("officeHomeText");
+  if(el)el.textContent=s?`${s.officeUser} • OFİS / DASHBOARD`:"MEKANİK OFİS GİRİŞİ";
+}
+
+async function openOfficeArea(){
+  const s=loadOfficeSession();
+  if(!s){
+    showView("officeLoginView");
+    if(navigator.onLine)refreshRemoteConfig(false).catch(()=>{});
+    return;
+  }
+
+  document.getElementById("officePanelTitle").textContent=s.officeUser;
+  showView("officePanelView");
+  renderOfficeData(getCachedOfficeData(),"Telefondaki son dashboard");
+  if(navigator.onLine)refreshOfficeDashboard(false).catch(()=>{});
+}
+
+async function officeLogin(){
+  if(officeLoginRunning)return;
+  const officeUser=document.getElementById("officeLoginSelect").value;
+  const pin=document.getElementById("officePin").value.trim();
+  const out=document.getElementById("officeLoginResult");
+  const url=apiUrl();
+
+  if(!officeUser)return showToast("Mekanik ofis kullanıcısını seç.");
+  if(!/^\d{4}$/.test(pin))return showToast("PIN 4 haneli olmalı.");
+  if(!url)return showToast("Bulut bağlantısı tanımlı değil.");
+  if(!navigator.onLine)return showToast("İlk giriş için internet gerekli.");
+
+  officeLoginRunning=true;
+  const btn=document.getElementById("officeLoginBtn");
+  setButtonBusy(btn,true,"GİRİŞ KONTROL EDİLİYOR…");
+  out.textContent="Giriş kontrol ediliyor…";
+
+  try{
+    const data=await apiPost(url,{action:"officeLogin",officeUser,pin},20000);
+    if(!data.ok)throw new Error(data.error||"Giriş başarısız");
+    const session={officeUser:data.officeUser,token:data.token,loginAt:new Date().toISOString()};
+    saveOfficeSession(session,document.getElementById("rememberOffice").checked);
+    document.getElementById("officePin").value="";
+    out.textContent="✅ Giriş başarılı.";
+    updateOfficeHome();
+    document.getElementById("officePanelTitle").textContent=session.officeUser;
+    showView("officePanelView");
+    await refreshOfficeDashboard(true);
+  }catch(err){
+    out.textContent="❌ "+String(err.message||err);
+  }finally{
+    setButtonBusy(btn,false);
+    officeLoginRunning=false;
+  }
+}
+
+function officeLogout(){
+  clearOfficeSession();
+  updateOfficeHome();
+  document.getElementById("officePin").value="";
+  showView("homeView");
+  showToast("Mekanik ofis oturumu kapatıldı.");
+}
+
+function officeCacheKey(){
+  const s=loadOfficeSession();
+  return s?`officeData:${s.officeUser}`:"officeData:none";
+}
+
+function saveCachedOfficeData(data){
+  try{localStorage.setItem(officeCacheKey(),JSON.stringify(data||{dashboard:{},issues:[]}));}catch(_){}
+}
+
+function getCachedOfficeData(){
+  try{return JSON.parse(localStorage.getItem(officeCacheKey())||'{"dashboard":{},"issues":[]}');}
+  catch(_){return {dashboard:{},issues:[]};}
+}
+
+function getCachedOfficeIssues(){
+  const data=getCachedOfficeData();
+  return Array.isArray(data.issues)?data.issues:[];
+}
+
+async function refreshOfficeDashboard(showMessage=true){
+  const session=loadOfficeSession();
+  if(!session)return;
+  if(officeRefreshRunning)return;
+
+  const url=apiUrl();
+  if(!url)return;
+
+  if(!navigator.onLine){
+    renderOfficeData(getCachedOfficeData(),"İnternet yok — son dashboard");
+    if(showMessage)showToast("İnternet yok. Son dashboard gösteriliyor.");
+    return;
+  }
+
+  officeRefreshRunning=true;
+  document.getElementById("officePanelStatus").textContent="Dashboard yenileniyor…";
+  const btn=document.getElementById("refreshOfficeBtn");
+  setButtonBusy(btn,true,"Yenileniyor…");
+
+  try{
+    const data=await apiPost(url,{
+      action:"officeDashboard",
+      officeUser:session.officeUser,
+      token:session.token
+    },30000);
+
+    if(!data.ok)throw new Error(data.error||"Dashboard alınamadı");
+    const cached={dashboard:data.dashboard||{},issues:data.issues||[],generatedAt:data.generatedAt||new Date().toISOString()};
+    saveCachedOfficeData(cached);
+    renderOfficeData(cached,`Son güncelleme: ${new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}`);
+    if(showMessage)showToast("Mekanik ofis dashboard güncellendi.");
+  }catch(err){
+    const msg=String(err.message||err);
+    if(msg.toLowerCase().includes("oturum")||msg.toLowerCase().includes("pin")){
+      clearOfficeSession();
+      updateOfficeHome();
+      showView("officeLoginView");
+      document.getElementById("officeLoginResult").textContent="Oturum geçersiz. PIN ile tekrar giriş yap.";
+    }else{
+      renderOfficeData(getCachedOfficeData(),"Bağlantı kurulamadı — son dashboard");
+      if(showMessage)showToast("Dashboard yenilenemedi.");
+    }
+  }finally{
+    setButtonBusy(btn,false);
+    officeRefreshRunning=false;
+  }
+}
+
+function renderOfficeData(data,statusText){
+  const d=(data&&data.dashboard)||{};
+  document.getElementById("officePanelStatus").textContent=statusText||"";
+  document.getElementById("officeOpenCount").textContent=Number(d.open||0);
+  document.getElementById("officeOverdueCount").textContent=Number(d.overdue||0);
+  document.getElementById("officeWaitingCount").textContent=Number(d.waiting||0);
+  document.getElementById("officeCriticalCount").textContent=Number(d.critical||0);
+  document.getElementById("officeClosedWeekCount").textContent=Number(d.closedThisWeek||0);
+  document.getElementById("officeAvgClose").textContent=Number.isFinite(Number(d.averageCloseDays))?`${Number(d.averageCloseDays)} gün`:"—";
+
+  renderDashboardRows("officeContractorBreakdown",d.contractorBreakdown||[],"contractor");
+  renderDashboardRows("officeBlockBreakdown",d.byBlock||[],"simple");
+  renderDashboardRows("officeIssueBreakdown",d.byIssue||[],"simple");
+  renderOfficeIssues((data&&data.issues)||[]);
+}
+
+function renderDashboardRows(id,rows,type){
+  const el=document.getElementById(id);
+  if(!el)return;
+
+  if(!rows.length){
+    el.innerHTML='<div class="office-empty">Kayıt yok.</div>';
+    return;
+  }
+
+  el.innerHTML=rows.map(x=>{
+    if(type==="contractor"){
+      return `<div class="dashboard-row">
+        <div class="name">${escapeHtml(x.name)}<span class="sub">${Number(x.waiting||0)} kontrol bekliyor</span></div>
+        <div class="value">${Number(x.open||0)} / <span class="${Number(x.overdue||0)>0?"text-danger":""}">${Number(x.overdue||0)}</span></div>
+      </div>`;
+    }
+    return `<div class="dashboard-row"><div class="name">${escapeHtml(x.name)}</div><div class="value">${Number(x.count||0)}</div></div>`;
+  }).join("");
+}
+
+function officeFilteredIssues(issues){
+  const list=Array.isArray(issues)?issues:[];
+  if(officeCurrentFilter==="waiting")return list.filter(x=>x.status==="Kontrol Bekliyor");
+  if(officeCurrentFilter==="overdue")return list.filter(x=>Number(x.overdueDays)>0);
+  if(officeCurrentFilter==="critical")return list.filter(x=>["Kritik","Yüksek"].includes(x.priority));
+  return list;
+}
+
+function renderOfficeIssues(issues){
+  const list=document.getElementById("officeIssueList");
+  if(!list)return;
+  const filtered=officeFilteredIssues(issues);
+
+  if(!filtered.length){
+    list.innerHTML='<div class="card office-empty">Bu filtrede açık iş yok.</div>';
+    return;
+  }
+
+  list.innerHTML=filtered.map(x=>{
+    const waiting=x.status==="Kontrol Bekliyor";
+    const overdue=Number(x.overdueDays)>0;
+    const critical=["Kritik","Yüksek"].includes(x.priority);
+
+    return `<div class="card ${waiting?"office-card-control":""} ${overdue?"office-card-overdue":""} ${critical?"office-card-critical":""}">
+      <div>
+        ${priorityTag(x.priority)}
+        ${overdue?`<span class="tag overdue">${Number(x.overdueDays)} GÜN GECİKMİŞ</span>`:""}
+        ${waiting?'<span class="tag waiting">KONTROL BEKLİYOR</span>':""}
+      </div>
+      <h3>${escapeHtml(x.block)} / ${escapeHtml(x.floor)} / ${escapeHtml(x.location)}</h3>
+      <p><b>${escapeHtml(x.recordId)}</b> · ${escapeHtml(x.issueType)}</p>
+      <p>${escapeHtml(x.note)}</p>
+      <div class="office-card-meta">
+        <p><b>Taşeron:</b> ${escapeHtml(x.contractor)}</p>
+        <p><b>Formen:</b> ${escapeHtml(x.foreman)}</p>
+        <p><b>Termin:</b> ${formatDate(x.dueDate)}</p>
+        <p><b>Durum:</b> ${escapeHtml(x.status)}</p>
+      </div>
+      ${x.correctionNote?`<p><b>Düzeltme:</b> ${escapeHtml(x.correctionNote)}</p>`:""}
+      <button type="button" class="card-action office-open-btn" data-office-record="${escapeAttr(x.recordId)}">
+        ${waiting?"🔍 KONTROL ET":"📄 KAYDI AÇ"}
+      </button>
+    </div>`;
+  }).join("");
+}
+
+function openOfficeDetail(issue){
+  officeCurrentIssue=issue;
+  document.getElementById("officeDetailRecordLabel").textContent=`${issue.recordId} · ${issue.block} / ${issue.floor}`;
+  document.getElementById("officeDecisionNote").value="";
+  document.getElementById("officeDecisionTerm").value="";
+  document.getElementById("officeDecisionResult").textContent="";
+  updateOfficeDuePreview();
+
+  const waiting=issue.status==="Kontrol Bekliyor";
+  const closeBtn=document.getElementById("officeCloseBtn");
+  const rejectBtn=document.getElementById("officeRejectBtn");
+  closeBtn.disabled=!waiting;
+  rejectBtn.disabled=!waiting;
+
+  const summary=document.getElementById("officeDetailSummary");
+  summary.innerHTML=`
+    <div>
+      ${priorityTag(issue.priority)}
+      ${Number(issue.overdueDays)>0?`<span class="tag overdue">${Number(issue.overdueDays)} GÜN GECİKMİŞ</span>`:""}
+      ${waiting?'<span class="tag waiting">KONTROL BEKLİYOR</span>':""}
+    </div>
+    <h3>${escapeHtml(issue.block)} / ${escapeHtml(issue.floor)} / ${escapeHtml(issue.location)}</h3>
+    <p><b>Kayıt:</b> ${escapeHtml(issue.recordId)}</p>
+    <p><b>Hata:</b> ${escapeHtml(issue.issueType)}</p>
+    <p><b>İlk açıklama:</b> ${escapeHtml(issue.note)}</p>
+    <p><b>Taşeron:</b> ${escapeHtml(issue.contractor)} · <b>Formen:</b> ${escapeHtml(issue.foreman)}</p>
+    <p><b>İlk termin:</b> ${formatDate(issue.initialDueDate)}${issue.newDueDate?` · <b>Yeni termin:</b> ${formatDate(issue.newDueDate)}`:""}</p>
+    <div class="office-detail-status">Durum: ${escapeHtml(issue.status)}</div>
+    ${issue.correctionNote?`<div class="office-detail-note"><b>Taşeron düzeltmesi:</b><br>${escapeHtml(issue.correctionNote)}</div>`:""}
+    ${issue.checkResult?`<p><b>Son kontrol:</b> ${escapeHtml(issue.checkResult)}${issue.checker?` — ${escapeHtml(issue.checker)}`:""}</p>`:""}
+    <div class="office-photo-grid">
+      <div class="office-photo-panel">
+        <h4>İlk Hata Fotoğrafı</h4>
+        ${issue.hasInitialPhoto?officeSecurePhotoHtml(issue.recordId,"initial","İlk hata fotoğrafı"):'<p class="help">Fotoğraf yok.</p>'}
+      </div>
+      <div class="office-photo-panel">
+        <h4>Düzeltme Fotoğrafı</h4>
+        ${issue.hasCorrectionPhoto?officeSecurePhotoHtml(issue.recordId,"correction","Düzeltme fotoğrafı"):'<p class="help">Henüz düzeltme fotoğrafı yok.</p>'}
+      </div>
+    </div>
+  `;
+  hydrateOfficeSecurePhotos(summary);
+  showView("officeDetailView");
+}
+
+function officeSecurePhotoHtml(recordId,kind,label){
+  return `<div class="secure-photo" data-office-photo="1" data-record-id="${escapeAttr(recordId)}" data-kind="${escapeAttr(kind)}">
+    <button type="button" class="photo-load-btn">📷 ${escapeHtml(label)} — GÖSTER</button>
+  </div>`;
+}
+
+function hydrateOfficeSecurePhotos(root=document){
+  root.querySelectorAll('[data-office-photo="1"]').forEach(box=>{
+    const btn=box.querySelector(".photo-load-btn");
+    if(btn)btn.addEventListener("click",()=>loadOfficePhoto(box));
+    if("IntersectionObserver" in window){
+      const obs=new IntersectionObserver(entries=>{
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){obs.unobserve(entry.target);loadOfficePhoto(entry.target);}
+        });
+      },{rootMargin:"40px"});
+      obs.observe(box);
+    }
+  });
+}
+
+async function loadOfficePhoto(box){
+  if(!box||box.dataset.loading==="1"||box.dataset.loaded==="1")return;
+  const session=loadOfficeSession();
+  if(!session||!navigator.onLine)return;
+
+  const cacheKey=`office|${box.dataset.recordId}|${box.dataset.kind}`;
+  if(securePhotoCache.has(cacheKey)){
+    const img=document.createElement("img");
+    img.alt="Mekanik kontrol fotoğrafı";
+    img.src=securePhotoCache.get(cacheKey);
+    box.replaceChildren(img);
+    box.dataset.loaded="1";
+    return;
+  }
+
+  box.dataset.loading="1";
+  const btn=box.querySelector(".photo-load-btn");
+  if(btn){btn.disabled=true;btn.textContent="Fotoğraf yükleniyor…";}
+
+  try{
+    const data=await apiPost(apiUrl(),{
+      action:"officeImage",
+      officeUser:session.officeUser,
+      token:session.token,
+      recordId:box.dataset.recordId,
+      kind:box.dataset.kind
+    },60000);
+    if(!data.ok)throw new Error(data.error||"Fotoğraf alınamadı");
+
+    securePhotoCache.set(cacheKey,data.dataUrl);
+    while(securePhotoCache.size>SECURE_PHOTO_CACHE_LIMIT)securePhotoCache.delete(securePhotoCache.keys().next().value);
+
+    const img=document.createElement("img");
+    img.alt="Mekanik kontrol fotoğrafı";
+    img.src=data.dataUrl;
+    box.replaceChildren(img);
+    box.dataset.loaded="1";
+  }catch(err){
+    box.innerHTML=`<div class="photo-error">Fotoğraf yüklenemedi.<br>${escapeHtml(String(err.message||err))}<br><button type="button" class="photo-load-btn">TEKRAR DENE</button></div>`;
+    const retry=box.querySelector(".photo-load-btn");
+    if(retry)retry.addEventListener("click",()=>{box.dataset.loading="0";loadOfficePhoto(box);});
+  }finally{
+    box.dataset.loading="0";
+  }
+}
+
+async function officeDecision(decision){
+  if(officeDecisionRunning)return;
+  const session=loadOfficeSession();
+  const issue=officeCurrentIssue;
+  if(!session||!issue)return showToast("Mekanik ofis kaydı seçili değil.");
+  if(!navigator.onLine)return showToast("Mekanik kontrol kararı için internet gerekli.");
+
+  const note=document.getElementById("officeDecisionNote").value.trim();
+  const termRaw=document.getElementById("officeDecisionTerm").value;
+  const termDays=termRaw===""?null:Number(termRaw);
+
+  if(["reject","newDue"].includes(decision)){
+    if(note.length<3)return showToast(decision==="reject"?"Red sebebi yaz.":"Yeni termin sebebi yaz.");
+    if(termDays===null||!Number.isFinite(termDays))return showToast("Yeni termin seç.");
+  }
+
+  if(decision==="close" && issue.status!=="Kontrol Bekliyor")return showToast("Bu iş henüz kontrol beklemiyor.");
+  if(decision==="reject" && issue.status!=="Kontrol Bekliyor")return showToast("Bu iş henüz kontrol beklemiyor.");
+
+  const labels={
+    close:"Bu düzeltmeyi uygun bulup kaydı kapatmak istiyor musun?",
+    reject:"Düzeltmeyi reddedip yeni termin vermek istiyor musun?",
+    newDue:"Bu işe yeni termin vermek istiyor musun?"
+  };
+  if(!window.confirm(labels[decision]))return;
+
+  officeDecisionRunning=true;
+  const clicked=decision==="close"?document.getElementById("officeCloseBtn"):decision==="reject"?document.getElementById("officeRejectBtn"):document.getElementById("officeNewDueBtn");
+  setButtonBusy(clicked,true,"İŞLENİYOR…");
+  document.getElementById("officeDecisionResult").textContent="Mekanik ofis kararı kaydediliyor…";
+
+  try{
+    const data=await apiPost(apiUrl(),{
+      action:"officeDecision",
+      officeUser:session.officeUser,
+      token:session.token,
+      recordId:issue.recordId,
+      decision,
+      note,
+      termDays
+    },30000);
+
+    if(!data.ok)throw new Error(data.error||"İşlem kaydedilemedi");
+    document.getElementById("officeDecisionResult").textContent="✅ İşlem kaydedildi.";
+    showToast(decision==="close"?"Kayıt kapatıldı.":decision==="reject"?"Düzeltme reddedildi ve yeni termin verildi.":"Yeni termin kaydedildi.");
+    officeCurrentIssue=null;
+    showView("officePanelView");
+    await refreshOfficeDashboard(false);
+  }catch(err){
+    document.getElementById("officeDecisionResult").textContent="❌ "+String(err.message||err);
+  }finally{
+    setButtonBusy(clicked,false);
+    officeDecisionRunning=false;
+  }
+}
+
 function saveContractorSession(session,remember){
   localStorage.removeItem("contractorSession");
   sessionStorage.removeItem("contractorSession");

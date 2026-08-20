@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v4.2.3</span>
+  <span id="versionLabel" class="version">v5.0</span>
 </header>
 
 <main class="container">
@@ -40,6 +40,12 @@
     <button id="contractorHomeBtn" class="home-btn contractor">
       <span class="icon">🔧</span>
       <span id="contractorHomeText">TAŞERON GİRİŞİ</span>
+    </button>
+
+    <div class="role-label office-label">MEKANİK OFİS</div>
+    <button id="officeHomeBtn" class="home-btn office">
+      <span class="icon">🏗️</span>
+      <span id="officeHomeText">MEKANİK OFİS GİRİŞİ</span>
     </button>
 
     <div class="role-label">TELEFON / SENKRONİZASYON</div>
@@ -211,6 +217,125 @@
 
       <button type="submit" class="submit-btn success-action">✅ DÜZELTMEYİ BİLDİR</button>
     </form>
+  </section>
+
+
+  <section id="officeLoginView" class="view scroll-view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <div>
+        <h2>Mekanik Ofis Girişi</h2>
+        <p class="subtitle">Kullanıcını seç ve 4 haneli PIN'ini gir.</p>
+      </div>
+    </div>
+
+    <div class="field-card">
+      <label for="officeLoginSelect">Mekanik Ofis Kullanıcısı</label>
+      <select id="officeLoginSelect"><option value="">Kullanıcı seç</option></select>
+    </div>
+
+    <div class="field-card">
+      <label for="officePin">4 Haneli PIN</label>
+      <input id="officePin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" enterkeyhint="done" placeholder="••••">
+      <p class="field-hint">PIN yalnız mekanik ofis yetkilileri içindir.</p>
+    </div>
+
+    <label class="remember-row">
+      <input id="rememberOffice" type="checkbox" checked>
+      <span>Bu telefonu hatırla</span>
+    </label>
+
+    <button id="officeLoginBtn" class="submit-btn office-action">🔐 OFİS GİRİŞİ</button>
+    <p id="officeLoginResult" class="help">İlk giriş için internet gerekir.</p>
+  </section>
+
+  <section id="officePanelView" class="view scroll-view">
+    <div class="section-head">
+      <button class="back-btn" data-go="homeView" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2 id="officePanelTitle">Mekanik Ofis</h2>
+        <p id="officePanelStatus" class="subtitle">Dashboard yükleniyor…</p>
+      </div>
+      <button id="officeLogoutBtn" class="small-btn danger-outline">Çıkış</button>
+    </div>
+
+    <div class="office-kpi-grid">
+      <button class="office-kpi" data-office-filter="all"><strong id="officeOpenCount">0</strong><span>Açık</span></button>
+      <button class="office-kpi danger" data-office-filter="overdue"><strong id="officeOverdueCount">0</strong><span>Gecikmiş</span></button>
+      <button class="office-kpi waiting" data-office-filter="waiting"><strong id="officeWaitingCount">0</strong><span>Kontrol Bekliyor</span></button>
+      <button class="office-kpi critical" data-office-filter="critical"><strong id="officeCriticalCount">0</strong><span>Kritik</span></button>
+      <div class="office-kpi success"><strong id="officeClosedWeekCount">0</strong><span>Bu Hafta Kapandı</span></div>
+      <div class="office-kpi"><strong id="officeAvgClose">—</strong><span>Ort. Kapanma</span></div>
+    </div>
+
+    <div class="dashboard-section">
+      <div class="dashboard-head">
+        <h3>Taşeron Durumu</h3>
+        <span>Açık / Gecikmiş</span>
+      </div>
+      <div id="officeContractorBreakdown" class="dashboard-list"></div>
+    </div>
+
+    <div class="dashboard-two-col">
+      <div class="dashboard-section">
+        <div class="dashboard-head"><h3>Bloklar</h3><span>Açık</span></div>
+        <div id="officeBlockBreakdown" class="dashboard-list compact-list"></div>
+      </div>
+      <div class="dashboard-section">
+        <div class="dashboard-head"><h3>Hata Türleri</h3><span>Açık</span></div>
+        <div id="officeIssueBreakdown" class="dashboard-list compact-list"></div>
+      </div>
+    </div>
+
+    <div class="office-work-head">
+      <h3>Saha İşleri</h3>
+      <button id="refreshOfficeBtn" class="small-btn">↻ Yenile</button>
+    </div>
+
+    <div id="officeFilterBar" class="filter-bar">
+      <button type="button" class="filter-chip active" data-office-filter="all">Tümü</button>
+      <button type="button" class="filter-chip" data-office-filter="waiting">Kontrol Bekliyor</button>
+      <button type="button" class="filter-chip" data-office-filter="overdue">Gecikmiş</button>
+      <button type="button" class="filter-chip" data-office-filter="critical">Kritik / Yüksek</button>
+    </div>
+
+    <div id="officeIssueList" class="card-list"></div>
+  </section>
+
+  <section id="officeDetailView" class="view scroll-view">
+    <div class="section-head">
+      <button id="officeDetailBackBtn" class="back-btn" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2>Mekanik Kontrol</h2>
+        <p id="officeDetailRecordLabel" class="subtitle"></p>
+      </div>
+    </div>
+
+    <div id="officeDetailSummary" class="card"></div>
+
+    <div class="dashboard-section">
+      <h3>Kontrol Kararı</h3>
+
+      <div class="field-card">
+        <label for="officeDecisionNote">Kontrol Notu / Red Sebebi</label>
+        <textarea id="officeDecisionNote" rows="3" maxlength="250" placeholder="Red veya yeni termin için açıklama yaz"></textarea>
+        <p class="field-hint">Red ve yeni termin işlemlerinde zorunludur.</p>
+      </div>
+
+      <div class="field-card">
+        <label for="officeDecisionTerm">Yeni Termin</label>
+        <select id="officeDecisionTerm"><option value="">Termin seç</option></select>
+        <p id="officeDecisionDuePreview" class="due-preview">Red / yeni termin işleminde kullanılır.</p>
+      </div>
+
+      <div class="office-decision-actions">
+        <button id="officeCloseBtn" type="button" class="submit-btn success-action">✅ ONAYLA VE KAPAT</button>
+        <button id="officeRejectBtn" type="button" class="submit-btn danger-action">↩️ REDDET + YENİ TERMİN</button>
+        <button id="officeNewDueBtn" type="button" class="submit-btn secondary-action">📅 YENİ TERMİN VER</button>
+      </div>
+
+      <p id="officeDecisionResult" class="help"></p>
+    </div>
   </section>
 
   <section id="pendingView" class="view">

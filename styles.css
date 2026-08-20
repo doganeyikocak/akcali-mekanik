@@ -311,3 +311,187 @@ button{
 @supports not (height:100svh){
   body{min-height:100vh !important;}
 }
+
+
+/* ===== v5.0 Mekanik Ofis + Dashboard ===== */
+.office-label{margin-top:18px}
+.home-btn.office{
+  background:#17324D;
+  color:#fff;
+  border-color:#17324D;
+}
+.office-action{background:#17324D;color:#fff}
+.office-kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+  margin:12px 0 16px;
+}
+.office-kpi{
+  min-width:0;
+  min-height:82px;
+  padding:10px 6px;
+  border:1px solid #D9E1E8;
+  border-radius:14px;
+  background:#fff;
+  color:#17324D;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  touch-action:manipulation;
+}
+button.office-kpi:active{transform:scale(.985)}
+.office-kpi strong{font-size:26px;line-height:1}
+.office-kpi span{
+  margin-top:6px;
+  font-size:11px;
+  font-weight:850;
+  line-height:1.15;
+  overflow-wrap:anywhere;
+}
+.office-kpi.danger{border-color:#F1B8B3;background:#FFF6F5;color:#A61B12}
+.office-kpi.waiting{border-color:#E8D89A;background:#FFFBEB;color:#765D00}
+.office-kpi.critical{border-color:#E7A5A5;background:#FFF1F1;color:#8F1111}
+.office-kpi.success{border-color:#A8D5B5;background:#F2FBF5;color:#1F6B37}
+
+.dashboard-section{
+  margin:12px 0;
+  padding:12px;
+  border:1px solid #DCE3EA;
+  border-radius:14px;
+  background:#fff;
+  min-width:0;
+}
+.dashboard-section h3{margin:0 0 8px;color:#17324D}
+.dashboard-head,.office-work-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-width:0;
+}
+.dashboard-head h3,.office-work-head h3{margin:0}
+.dashboard-head span{font-size:11px;font-weight:800;color:#6B7785}
+.dashboard-two-col{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+}
+.dashboard-list{display:flex;flex-direction:column;gap:7px}
+.dashboard-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+  padding:8px 0;
+  border-bottom:1px solid #EDF1F4;
+  min-width:0;
+}
+.dashboard-row:last-child{border-bottom:0}
+.dashboard-row .name{
+  min-width:0;
+  font-size:13px;
+  font-weight:800;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.dashboard-row .value{
+  font-size:13px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.dashboard-row .sub{
+  display:block;
+  margin-top:2px;
+  font-size:11px;
+  color:#71808E;
+  font-weight:700;
+}
+.compact-list .dashboard-row{padding:6px 0}
+
+.office-work-head{margin-top:18px}
+.filter-bar{
+  display:flex;
+  gap:7px;
+  overflow-x:auto;
+  padding:8px 0 10px;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.filter-bar::-webkit-scrollbar{display:none}
+.filter-chip{
+  flex:0 0 auto;
+  border:1px solid #CBD5DF;
+  border-radius:999px;
+  background:#fff;
+  color:#334D65;
+  padding:9px 12px;
+  font-size:13px;
+  font-weight:850;
+  touch-action:manipulation;
+}
+.filter-chip.active{background:#17324D;color:#fff;border-color:#17324D}
+.office-card-control{border-left:5px solid #D79B00}
+.office-card-overdue{border-left:5px solid #B42318}
+.office-card-critical{box-shadow:0 0 0 2px rgba(180,35,24,.08)}
+.office-card-meta{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:5px 10px;
+  margin:8px 0;
+}
+.office-card-meta p{margin:0;min-width:0;overflow-wrap:anywhere}
+.office-open-btn{margin-top:10px}
+
+.office-photo-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+  margin:12px 0;
+}
+.office-photo-panel{
+  min-width:0;
+  padding:8px;
+  border:1px solid #E0E6EC;
+  border-radius:12px;
+  background:#FAFBFC;
+}
+.office-photo-panel h4{margin:0 0 7px;font-size:13px;color:#42576B}
+.office-decision-actions{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:9px;
+}
+.office-detail-status{
+  padding:8px 10px;
+  border-radius:10px;
+  background:#EEF3F7;
+  font-weight:850;
+  overflow-wrap:anywhere;
+}
+.office-detail-note{
+  padding:10px;
+  border-radius:10px;
+  background:#FFF9E8;
+  border:1px solid #F0DEA0;
+  overflow-wrap:anywhere;
+}
+.office-empty{
+  padding:18px 12px;
+  text-align:center;
+  color:#637383;
+  font-weight:800;
+}
+
+@media(max-width:420px){
+  .office-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dashboard-two-col{grid-template-columns:1fr}
+  .office-photo-grid{grid-template-columns:1fr}
+}
+@media(max-width:330px){
+  .office-kpi strong{font-size:23px}
+  .office-kpi span{font-size:10px}
+  .office-card-meta{grid-template-columns:1fr}
+}

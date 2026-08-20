@@ -1,7 +1,8 @@
-const BACKEND_VERSION="4.2.2";
+const BACKEND_VERSION="5.0.0";
 const SHEET_NAME="ANA TAKİP";
 const DEFINITIONS_SHEET="TANIMLAR";
 const CORRECTION_LOG_SHEET="DÜZELTME GEÇMİŞİ";
+const OFFICE_LOG_SHEET="OFİS İŞLEM GEÇMİŞİ";
 const DRIVE_FOLDER_NAME="Akcali_Mekanik_Fotograflar";
 const TIMEZONE="Europe/Istanbul";
 
@@ -21,7 +22,8 @@ function setup(){
   ensureTrackingSheet_(ss);
   ensureDefinitionsSheet_(ss);
   ensureCorrectionLogSheet_(ss);
-  return "Akçalı Mekanik v4.0 kurulum tamam: "+ss.getName();
+  ensureOfficeLogSheet_(ss);
+  return "Akçalı Mekanik v5.0 kurulum tamam: "+ss.getName();
 }
 
 function spreadsheet_(){
@@ -61,12 +63,19 @@ function doPost(e){
     if(action==="contractorIssues")return json_(contractorIssues_(payload));
     if(action==="contractorImage")return json_(contractorImage_(payload));
 
+    if(action==="officeLogin")return json_(officeLogin_(payload));
+    if(action==="officeDashboard")return json_(officeDashboard_(payload));
+    if(action==="officeImage")return json_(officeImage_(payload));
+    if(action==="officeDecision"){
+      return json_(withLock_(()=>officeDecision_(payload)));
+    }
+
     if(action==="createIssue"){
-      return withLock_(()=>createIssue_(payload.issue));
+      return json_(withLock_(()=>createIssue_(payload.issue)));
     }
 
     if(action==="submitCorrection"){
-      return withLock_(()=>submitCorrection_(payload));
+      return json_(withLock_(()=>submitCorrection_(payload)));
     }
 
     return json_({ok:false,error:"Bilinmeyen işlem"});
@@ -131,7 +140,7 @@ function getConfig_(){
   const ss=spreadsheet_();
   const s=ensureDefinitionsSheet_(ss);
   const rows=Math.max(1,s.getLastRow()-3);
-  const values=s.getRange(4,1,rows,11).getDisplayValues();
+  const values=s.getRange(4,1,rows,12).getDisplayValues();
   const col=n=>values.map(r=>String(r[n]||"").trim()).filter(Boolean);
 
   return {
@@ -140,6 +149,7 @@ function getConfig_(){
     priorities:unique_(col(3)).length?unique_(col(3)):defaultConfig_().priorities,
     contractors:unique_(col(5)).length?unique_(col(5)):defaultConfig_().contractors,
     foremen:unique_(col(6)).length?unique_(col(6)):defaultConfig_().foremen,
+    officeUsers:unique_(col(7)),
     issues:unique_(col(8)).length?unique_(col(8)):defaultConfig_().issues,
     terms:unique_(col(10)).length?unique_(col(10)):defaultConfig_().terms
   };
@@ -152,6 +162,7 @@ function defaultConfig_(){
     priorities:["Kritik","Yüksek","Normal","Düşük"],
     contractors:["Taşeron 1"],
     foremen:["Formen 1"],
+    officeUsers:[],
     issues:["Ters Eğim","Eksik Kelepçe","Montaj Hatası","Diğer"],
     terms:["1","2","3","5","7"]
   };
@@ -162,9 +173,9 @@ function unique_(arr){return Array.from(new Set(arr));}
 function ensureDefinitionsSheet_(ss){
   let s=ss.getSheetByName(DEFINITIONS_SHEET);
   if(!s)s=ss.insertSheet(DEFINITIONS_SHEET);
-  if(s.getMaxColumns()<11)s.insertColumnsAfter(s.getMaxColumns(),11-s.getMaxColumns());
+  if(s.getMaxColumns()<12)s.insertColumnsAfter(s.getMaxColumns(),12-s.getMaxColumns());
 
-  const headers=["BLOKLAR","KATLAR","SİSTEMLER","ÖNCELİKLER","DURUMLAR","TAŞERONLAR","FORMENLER","MEKANİK OFİS","HATA TÜRLERİ","TAŞERON PIN","TERMİN SÜRELERİ (GÜN)"];
+  const headers=["BLOKLAR","KATLAR","SİSTEMLER","ÖNCELİKLER","DURUMLAR","TAŞERONLAR","FORMENLER","MEKANİK OFİS","HATA TÜRLERİ","TAŞERON PIN","TERMİN SÜRELERİ (GÜN)","MEKANİK OFİS PIN"];
   headers.forEach((h,i)=>{
     const cell=s.getRange(3,i+1);
     if(!cell.getValue())cell.setValue(h);
@@ -175,6 +186,7 @@ function ensureDefinitionsSheet_(ss){
   if(isRangeEmpty_(s,4,11,5,1))s.getRange(4,11,5,1).setValues([["1"],["2"],["3"],["5"],["7"]]);
 
   s.getRange(4,10,Math.max(1,s.getMaxRows()-3),1).setNumberFormat("@");
+  s.getRange(4,12,Math.max(1,s.getMaxRows()-3),1).setNumberFormat("@");
   return s;
 }
 
@@ -226,6 +238,294 @@ function validateIssue_(i){
   if(!Number.isFinite(termDays)||termDays<0||termDays>365)throw new Error("Geçersiz termin süresi.");
   if(String(i.note).trim().length>250)throw new Error("Kısa açıklama 250 karakteri geçemez.");
   if(!String(i.photoData).startsWith("data:image/"))throw new Error("Geçersiz fotoğraf verisi.");
+}
+
+
+/* ---------- MECHANICAL OFFICE AUTH ---------- */
+function officeLogin_(payload){
+  const officeUser=String(payload.officeUser||"").trim();
+  const pin=String(payload.pin||"").trim();
+
+  if(!officeUser)throw new Error("Mekanik ofis kullanıcısı seçilmedi.");
+  if(!/^\d{4}$/.test(pin))throw new Error("PIN 4 haneli olmalı.");
+
+  const savedPin=getOfficePin_(officeUser);
+  if(!savedPin)throw new Error("Bu kullanıcı için Mekanik Ofis PIN'i tanımlı değil.");
+  if(savedPin!==pin)throw new Error("PIN hatalı.");
+
+  return {ok:true,officeUser,token:officeToken_(officeUser,savedPin)};
+}
+
+function getOfficePin_(officeUser){
+  const ss=spreadsheet_();
+  const s=ensureDefinitionsSheet_(ss);
+  const last=Math.max(4,s.getLastRow());
+  const values=s.getRange(4,8,last-3,5).getDisplayValues(); // H:L
+  for(const r of values){
+    if(String(r[0]||"").trim()===officeUser){
+      const pin=String(r[4]||"").trim(); // L
+      return /^\d{4}$/.test(pin)?pin:"";
+    }
+  }
+  return "";
+}
+
+function officeToken_(officeUser,pin){
+  const secret=ensureSecret_();
+  const bytes=Utilities.computeHmacSha256Signature("office|"+officeUser+"|"+pin,secret);
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,"");
+}
+
+function validateOfficeToken_(officeUser,token){
+  officeUser=String(officeUser||"").trim();
+  token=String(token||"").trim();
+  const pin=getOfficePin_(officeUser);
+  if(!pin)throw new Error("Mekanik Ofis PIN'i tanımlı değil.");
+  if(token!==officeToken_(officeUser,pin))throw new Error("Mekanik ofis oturumu geçersiz. Tekrar giriş yap.");
+  return true;
+}
+
+/* ---------- MECHANICAL OFFICE DASHBOARD ---------- */
+function officeDashboard_(payload){
+  const officeUser=String(payload.officeUser||"").trim();
+  validateOfficeToken_(officeUser,payload.token);
+
+  const ss=spreadsheet_();
+  const sheet=ensureTrackingSheet_(ss);
+  const last=sheet.getLastRow();
+  if(last<5){
+    return {ok:true,dashboard:emptyDashboard_(),issues:[],generatedAt:new Date().toISOString()};
+  }
+
+  const values=sheet.getRange(5,1,last-4,29).getValues();
+  const closedStatuses=["Kapandı","İptal / Mükerrer","İptal/Mükerrer"];
+  const issues=[];
+  const contractorStats={};
+  const blockStats={};
+  const issueStats={};
+
+  let closedThisWeek=0;
+  let closedDurationSum=0;
+  let closedDurationCount=0;
+
+  const now=new Date();
+  const startWeek=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const day=(startWeek.getDay()+6)%7; // Pazartesi = 0
+  startWeek.setDate(startWeek.getDate()-day);
+  startWeek.setHours(0,0,0,0);
+
+  values.forEach(r=>{
+    const status=String(r[COL.STATUS-1]||"").trim();
+    const created=r[COL.CREATED_AT-1];
+    const closedAt=r[COL.CLOSED_AT-1];
+
+    if(status==="Kapandı" && closedAt instanceof Date && !isNaN(closedAt.getTime())){
+      if(closedAt>=startWeek)closedThisWeek++;
+      if(created instanceof Date && !isNaN(created.getTime())){
+        closedDurationSum += Math.max(0,(closedAt-created)/86400000);
+        closedDurationCount++;
+      }
+    }
+
+    if(closedStatuses.includes(status))return;
+
+    const effectiveDue=effectiveDueFromRow_(r);
+    const overdue=overdueDays_(effectiveDue,status);
+    const contractor=String(r[COL.CONTRACTOR-1]||"").trim()||"Atanmamış";
+    const block=String(r[COL.BLOCK-1]||"").trim()||"Belirsiz";
+    const issueType=String(r[COL.ISSUE_TYPE-1]||"").trim()||"Diğer";
+
+    if(!contractorStats[contractor])contractorStats[contractor]={name:contractor,open:0,overdue:0,waiting:0};
+    contractorStats[contractor].open++;
+    if(overdue>0)contractorStats[contractor].overdue++;
+    if(status==="Kontrol Bekliyor")contractorStats[contractor].waiting++;
+
+    blockStats[block]=(blockStats[block]||0)+1;
+    issueStats[issueType]=(issueStats[issueType]||0)+1;
+
+    issues.push({
+      recordId:String(r[COL.RECORD_ID-1]||""),
+      createdAt:iso_(r[COL.CREATED_AT-1]),
+      reporter:String(r[COL.REPORTER-1]||""),
+      block:String(r[COL.BLOCK-1]||""),
+      floor:String(r[COL.FLOOR-1]||""),
+      location:String(r[COL.LOCATION-1]||""),
+      issueType:String(r[COL.ISSUE_TYPE-1]||""),
+      note:String(r[COL.NOTE-1]||""),
+      contractor:String(r[COL.CONTRACTOR-1]||""),
+      foreman:String(r[COL.FOREMAN-1]||""),
+      priority:String(r[COL.PRIORITY-1]||"Normal"),
+      initialDueDate:iso_(r[COL.DUE_DATE-1]),
+      newDueDate:iso_(r[COL.NEW_DUE_DATE-1]),
+      dueDate:iso_(effectiveDue),
+      status:status||"Taşerona Atandı",
+      correctionNote:String(r[COL.CORRECTION_NOTE-1]||""),
+      correctionAt:iso_(r[COL.CORRECTION_AT-1]),
+      checkDate:iso_(r[COL.CHECK_DATE-1]),
+      checker:String(r[COL.CHECKER-1]||""),
+      checkResult:String(r[COL.CHECK_RESULT-1]||""),
+      hasInitialPhoto:Boolean(String(r[COL.INITIAL_PHOTO-1]||"").trim()),
+      hasCorrectionPhoto:Boolean(String(r[COL.CORRECTION_PHOTO-1]||"").trim()),
+      overdueDays:overdue
+    });
+  });
+
+  const weight={"Kritik":4,"Yüksek":3,"Normal":2,"Düşük":1};
+  issues.sort((a,b)=>
+    ((b.status==="Kontrol Bekliyor")-(a.status==="Kontrol Bekliyor"))||
+    (Number(b.overdueDays)-Number(a.overdueDays))||
+    ((weight[b.priority]||0)-(weight[a.priority]||0))||
+    String(a.dueDate||"").localeCompare(String(b.dueDate||""))
+  );
+
+  const contractorBreakdown=Object.values(contractorStats)
+    .sort((a,b)=>(b.overdue-a.overdue)||(b.open-a.open)||a.name.localeCompare(b.name))
+    .slice(0,20);
+
+  const byBlock=Object.entries(blockStats)
+    .map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name))
+    .slice(0,12);
+
+  const byIssue=Object.entries(issueStats)
+    .map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name))
+    .slice(0,12);
+
+  const dashboard={
+    open:issues.length,
+    overdue:issues.filter(x=>Number(x.overdueDays)>0).length,
+    waiting:issues.filter(x=>x.status==="Kontrol Bekliyor").length,
+    critical:issues.filter(x=>x.priority==="Kritik").length,
+    closedThisWeek,
+    averageCloseDays:closedDurationCount?Math.round((closedDurationSum/closedDurationCount)*10)/10:null,
+    contractorBreakdown,
+    byBlock,
+    byIssue
+  };
+
+  return {ok:true,dashboard,issues,generatedAt:new Date().toISOString()};
+}
+
+function emptyDashboard_(){
+  return {open:0,overdue:0,waiting:0,critical:0,closedThisWeek:0,averageCloseDays:null,contractorBreakdown:[],byBlock:[],byIssue:[]};
+}
+
+function effectiveDueFromRow_(r){
+  const newer=r[COL.NEW_DUE_DATE-1];
+  if(newer instanceof Date && !isNaN(newer.getTime()))return newer;
+  return r[COL.DUE_DATE-1];
+}
+
+/* ---------- MECHANICAL OFFICE IMAGE ---------- */
+function officeImage_(payload){
+  const officeUser=String(payload.officeUser||"").trim();
+  validateOfficeToken_(officeUser,payload.token);
+
+  const recordId=String(payload.recordId||"").trim();
+  const kind=String(payload.kind||"initial").trim();
+  if(!recordId)throw new Error("Kayıt numarası eksik.");
+  if(!["initial","correction"].includes(kind))throw new Error("Geçersiz fotoğraf türü.");
+
+  const ss=spreadsheet_();
+  const sheet=ensureTrackingSheet_(ss);
+  const row=findByColumn_(sheet,COL.RECORD_ID,recordId,5);
+  if(!row)throw new Error("Kayıt bulunamadı.");
+
+  const col=kind==="correction"?COL.CORRECTION_PHOTO:COL.INITIAL_PHOTO;
+  const stored=String(sheet.getRange(row,col).getDisplayValue()||"").trim();
+  if(!stored)throw new Error("Fotoğraf bulunamadı.");
+
+  const fileId=extractDriveFileId_(stored);
+  if(!fileId)throw new Error("Fotoğraf dosya kimliği bulunamadı.");
+
+  const file=DriveApp.getFileById(fileId);
+  const blob=file.getBlob();
+  const mime=blob.getContentType()||"image/jpeg";
+  const base64=Utilities.base64Encode(blob.getBytes());
+  return {ok:true,dataUrl:"data:"+mime+";base64,"+base64};
+}
+
+/* ---------- MECHANICAL OFFICE DECISION ---------- */
+function officeDecision_(payload){
+  const officeUser=String(payload.officeUser||"").trim();
+  validateOfficeToken_(officeUser,payload.token);
+
+  const recordId=String(payload.recordId||"").trim();
+  const decision=String(payload.decision||"").trim();
+  const note=String(payload.note||"").trim();
+  const termDays=payload.termDays===""||payload.termDays===null||payload.termDays===undefined?null:Number(payload.termDays);
+
+  if(!recordId)throw new Error("Kayıt numarası eksik.");
+  if(!["close","reject","newDue"].includes(decision))throw new Error("Geçersiz mekanik ofis işlemi.");
+  if(note.length>250)throw new Error("Kontrol notu 250 karakteri geçemez.");
+
+  const ss=spreadsheet_();
+  const sheet=ensureTrackingSheet_(ss);
+  const log=ensureOfficeLogSheet_(ss);
+  const row=findByColumn_(sheet,COL.RECORD_ID,recordId,5);
+  if(!row)throw new Error("Kayıt bulunamadı.");
+
+  const oldStatus=String(sheet.getRange(row,COL.STATUS).getDisplayValue()||"").trim();
+  if(["Kapandı","İptal / Mükerrer","İptal/Mükerrer"].includes(oldStatus))throw new Error("Bu kayıt zaten kapalı.");
+
+  const now=new Date();
+  let newStatus=oldStatus;
+  let result="";
+  let newDue=null;
+
+  if(decision==="close"){
+    if(oldStatus!=="Kontrol Bekliyor")throw new Error("Yalnız 'Kontrol Bekliyor' durumundaki iş onaylanıp kapatılabilir.");
+    newStatus="Kapandı";
+    result=note?("Uygun — "+note):"Uygun";
+    sheet.getRange(row,COL.CLOSED_AT).setValue(now).setNumberFormat("dd.MM.yyyy HH:mm");
+  }
+
+  if(decision==="reject"){
+    if(oldStatus!=="Kontrol Bekliyor")throw new Error("Yalnız 'Kontrol Bekliyor' durumundaki düzeltme reddedilebilir.");
+    if(note.length<3)throw new Error("Red sebebi zorunlu.");
+    if(!Number.isFinite(termDays)||termDays<0||termDays>365)throw new Error("Yeni termin seç.");
+    newDue=new Date(now);
+    newDue.setDate(newDue.getDate()+termDays);
+    newStatus="Uygun Değil – Tekrar Düzeltilecek";
+    result="Uygun Değil — "+note;
+    sheet.getRange(row,COL.NEW_DUE_DATE).setValue(newDue).setNumberFormat("dd.MM.yyyy");
+  }
+
+  if(decision==="newDue"){
+    if(note.length<3)throw new Error("Yeni termin sebebi zorunlu.");
+    if(!Number.isFinite(termDays)||termDays<0||termDays>365)throw new Error("Yeni termin seç.");
+    newDue=new Date(now);
+    newDue.setDate(newDue.getDate()+termDays);
+    sheet.getRange(row,COL.NEW_DUE_DATE).setValue(newDue).setNumberFormat("dd.MM.yyyy");
+    if(oldStatus==="Kontrol Bekliyor")newStatus="Uygun Değil – Tekrar Düzeltilecek";
+    result="Yeni Termin — "+note;
+  }
+
+  sheet.getRange(row,COL.STATUS).setValue(newStatus);
+  sheet.getRange(row,COL.CHECK_DATE).setValue(now).setNumberFormat("dd.MM.yyyy HH:mm");
+  sheet.getRange(row,COL.CHECKER).setValue(officeUser);
+  sheet.getRange(row,COL.CHECK_RESULT).setValue(result);
+
+  const existingExtra=String(sheet.getRange(row,COL.EXTRA_NOTE).getDisplayValue()||"").trim();
+  const auditLine=Utilities.formatDate(now,TIMEZONE,"dd.MM.yyyy HH:mm")+" | "+officeUser+" | "+result;
+  sheet.getRange(row,COL.EXTRA_NOTE).setValue(existingExtra?(existingExtra+"\n"+auditLine):auditLine);
+
+  log.appendRow([
+    now,recordId,officeUser,decision,oldStatus,newStatus,note,newDue||"",String(sheet.getRange(row,COL.CONTRACTOR).getDisplayValue()||"")
+  ]);
+  const lr=log.getLastRow();
+  log.getRange(lr,1).setNumberFormat("dd.MM.yyyy HH:mm");
+  if(newDue)log.getRange(lr,8).setNumberFormat("dd.MM.yyyy");
+
+  return {
+    ok:true,
+    recordId,
+    status:newStatus,
+    decision,
+    checkDate:now.toISOString(),
+    newDueDate:newDue?newDue.toISOString():""
+  };
 }
 
 /* ---------- CONTRACTOR AUTH ---------- */
@@ -458,6 +758,19 @@ function ensureTrackingSheet_(ss){
     "Düzeltme Bildiren","Termin Süresi (Gün)"
   ];
   s.getRange(4,1,1,29).setValues([headers]);
+  return s;
+}
+
+
+function ensureOfficeLogSheet_(ss){
+  let s=ss.getSheetByName(OFFICE_LOG_SHEET);
+  if(!s)s=ss.insertSheet(OFFICE_LOG_SHEET);
+  if(s.getMaxColumns()<9)s.insertColumnsAfter(s.getMaxColumns(),9-s.getMaxColumns());
+  if(!s.getRange(1,1).getValue()){
+    s.getRange(1,1,1,9).setValues([[
+      "İşlem Zamanı","Kayıt No","Mekanik Ofis","İşlem","Önceki Durum","Yeni Durum","Açıklama","Yeni Termin","Taşeron"
+    ]]);
+  }
   return s;
 }
 
