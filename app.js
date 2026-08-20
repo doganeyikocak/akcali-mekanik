@@ -1,4 +1,4 @@
-const APP_VERSION="5.1.0";
+const APP_VERSION="5.2.0";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -41,6 +41,19 @@ const officeFilterState={
   priority:"",
   issueType:""
 };
+let progressRefreshRunning=false;
+let progressSaveRunning=false;
+let progressSnapshotRunning=false;
+let progressExportRunning=false;
+let progressDataCache=null;
+let progressSelectedBlock="";
+let progressSelectedItemId="";
+let progressBlockFilter="all";
+let progressItemFilter="incomplete";
+let progressBlockSearchTimer=null;
+let progressItemSearchTimer=null;
+let progressEditValue=0;
+
 let photoProcessing=false;
 let correctionPhotoProcessing=false;
 const securePhotoCache=new Map();
@@ -48,7 +61,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v5.1";
+  document.getElementById("versionLabel").textContent="v5.2";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -303,6 +316,49 @@ function bindButtons(){
   document.getElementById("officeCloseBtn").onclick=()=>officeDecision("close");
   document.getElementById("officeRejectBtn").onclick=()=>officeDecision("reject");
   document.getElementById("officeNewDueBtn").onclick=()=>officeDecision("newDue");
+  document.getElementById("progressOpenBtn").onclick=openProgressArea;
+  document.getElementById("progressBackBtn").onclick=()=>showView("officePanelView");
+  document.getElementById("progressRefreshBtn").onclick=()=>refreshProgressData(true);
+  document.getElementById("progressSnapshotBtn").onclick=snapshotCurrentProgressWeek;
+  document.getElementById("progressExportBtn").onclick=()=>exportProgressWeek();
+  document.getElementById("progressBlockBackBtn").onclick=()=>showView("progressView");
+  document.getElementById("progressEditBackBtn").onclick=()=>showView("progressBlockView");
+  document.getElementById("progressSaveChangesBtn").onclick=saveProgressDrafts;
+  document.getElementById("progressDiscardDraftsBtn").onclick=discardProgressDrafts;
+  document.getElementById("progressMinusBtn").onclick=()=>setProgressEditValue(progressEditValue-5);
+  document.getElementById("progressPlusBtn").onclick=()=>setProgressEditValue(progressEditValue+5);
+  document.getElementById("progressRange").addEventListener("input",e=>setProgressEditValue(Number(e.target.value)));
+  document.getElementById("progressAddDraftBtn").onclick=addProgressDraft;
+  document.getElementById("progressRemoveDraftBtn").onclick=removeProgressDraft;
+  document.querySelectorAll("[data-progress-preset]").forEach(btn=>btn.addEventListener("click",()=>setProgressEditValue(Number(btn.dataset.progressPreset))));
+
+  document.getElementById("progressBlockSearch").addEventListener("input",()=>{
+    clearTimeout(progressBlockSearchTimer);progressBlockSearchTimer=setTimeout(renderProgressBlocks,80);
+  });
+  document.getElementById("progressContractorFilter").addEventListener("change",renderProgressBlocks);
+  document.querySelectorAll("[data-progress-block-filter]").forEach(btn=>btn.addEventListener("click",()=>{
+    progressBlockFilter=btn.dataset.progressBlockFilter||"all";
+    document.querySelectorAll("[data-progress-block-filter]").forEach(x=>x.classList.toggle("active",x.dataset.progressBlockFilter===progressBlockFilter));
+    renderProgressBlocks();
+  }));
+  document.getElementById("progressBlockList").addEventListener("click",e=>{
+    const btn=e.target.closest("[data-progress-block]");if(btn)openProgressBlock(btn.dataset.progressBlock);
+  });
+
+  document.getElementById("progressItemSearch").addEventListener("input",()=>{
+    clearTimeout(progressItemSearchTimer);progressItemSearchTimer=setTimeout(renderProgressItems,80);
+  });
+  document.querySelectorAll("[data-progress-item-filter]").forEach(btn=>btn.addEventListener("click",()=>{
+    progressItemFilter=btn.dataset.progressItemFilter||"incomplete";
+    document.querySelectorAll("[data-progress-item-filter]").forEach(x=>x.classList.toggle("active",x.dataset.progressItemFilter===progressItemFilter));
+    renderProgressItems();
+  }));
+  document.getElementById("progressItemGroups").addEventListener("click",e=>{
+    const btn=e.target.closest("[data-progress-item]");if(btn)openProgressItemEditor(btn.dataset.progressItem);
+  });
+  document.getElementById("progressHistoryList").addEventListener("click",e=>{
+    const btn=e.target.closest("[data-progress-export-week]");if(btn)exportProgressWeek(btn.dataset.progressExportWeek);
+  });
 
   document.getElementById("contractorLoginBtn").onclick=contractorLogin;
   document.getElementById("contractorLogoutBtn").onclick=contractorLogout;
@@ -1164,6 +1220,156 @@ async function apiPost(url,payload,timeoutMs=20000){
 }
 
 /* ---------- Contractor auth/panel ---------- */
+
+
+/* ---------- WEEKLY PROGRESS ---------- */
+function progressCacheKey(){const s=loadOfficeSession();return s?`progressData:${s.officeUser}`:"progressData:none";}
+function saveProgressCache(data){progressDataCache=data||null;try{localStorage.setItem(progressCacheKey(),JSON.stringify(data||{}));}catch(_){}}
+function loadProgressCache(){if(progressDataCache)return progressDataCache;try{const d=JSON.parse(localStorage.getItem(progressCacheKey())||"null");if(d&&d.blocks)progressDataCache=d;}catch(_){}return progressDataCache;}
+function progressDraftKey(block){const s=loadOfficeSession(),d=loadProgressCache(),week=d&&d.week?d.week.key:"current";return `progressDraft:${s?s.officeUser:"none"}:${week}:${block}`;}
+function loadProgressDrafts(block){try{return JSON.parse(localStorage.getItem(progressDraftKey(block))||"{}")||{};}catch(_){return {};}}
+function saveProgressDraftMap(block,map){try{if(map&&Object.keys(map).length)localStorage.setItem(progressDraftKey(block),JSON.stringify(map));else localStorage.removeItem(progressDraftKey(block));}catch(_){}}
+function clearProgressDraftMap(block){try{localStorage.removeItem(progressDraftKey(block));}catch(_){}}
+function progressPct(v,digits=0){const n=Number(v);if(!Number.isFinite(n))return "—";return `%${n.toLocaleString("tr-TR",{minimumFractionDigits:digits,maximumFractionDigits:digits})}`;}
+function progressDeltaText(v){const n=Number(v||0);if(Math.abs(n)<.005)return "±%0";return `${n>0?"+":"−"}%${Math.abs(n).toLocaleString("tr-TR",{maximumFractionDigits:2})}`;}
+function progressDeltaClass(v){const n=Number(v||0);return n>.005?"progress-positive":n<-.005?"progress-negative":"progress-neutral";}
+function progressClampBar(v){return Math.max(0,Math.min(100,Number(v||0)));}
+
+async function openProgressArea(){
+  const s=loadOfficeSession();if(!s){showView("officeLoginView");showToast("Haftalık ilerleme için Mekanik Ofis girişi gerekli.");return;}
+  showView("progressView");
+  const cached=loadProgressCache();
+  if(cached&&cached.blocks)renderProgressData(cached,"Telefondaki son ilerleme verisi");
+  else document.getElementById("progressStatus").textContent="İlerleme verisi yükleniyor…";
+  if(navigator.onLine)refreshProgressData(false).catch(()=>{});else showToast("İnternet yok. Son indirilen ilerleme verisi gösteriliyor.");
+}
+
+async function refreshProgressData(showMessage=true){
+  const session=loadOfficeSession();if(!session||progressRefreshRunning)return;
+  if(!navigator.onLine){const c=loadProgressCache();if(c)renderProgressData(c,"İnternet yok — son kayıt");if(showMessage)showToast("İnternet yok. Son ilerleme verisi gösteriliyor.");return;}
+  progressRefreshRunning=true;const btn=document.getElementById("progressRefreshBtn");setButtonBusy(btn,true,"Yenileniyor…");
+  document.getElementById("progressStatus").textContent="İlerleme verisi yenileniyor…";
+  try{
+    const data=await apiPost(apiUrl(),{action:"progressData",officeUser:session.officeUser,token:session.token},45000);
+    if(!data.ok)throw new Error(data.error||"İlerleme verisi alınamadı.");
+    saveProgressCache(data);renderProgressData(data,`Son güncelleme: ${new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}`);
+    if(progressSelectedBlock&&data.blocks.some(x=>x.block===progressSelectedBlock))renderProgressBlock();
+    if(showMessage)showToast("Haftalık ilerleme güncellendi.");
+  }catch(err){if(showMessage)showToast("İlerleme yenilenemedi: "+String(err.message||err));}
+  finally{setButtonBusy(btn,false);progressRefreshRunning=false;}
+}
+
+function renderProgressData(data,statusText=""){
+  progressDataCache=data;const week=data.week||{};
+  document.getElementById("progressStatus").textContent=statusText;
+  document.getElementById("progressWeekLabel").textContent=week.key?`${week.year} / ${week.week}. Hafta`:"—";
+  document.getElementById("progressBaselineLabel").textContent=data.baseline?`Karşılaştırma: ${data.baseline.weekKey} · ${progressPct(data.previousOverall,2)}`:"Karşılaştırma haftası yok";
+  document.getElementById("progressOverallPct").textContent=progressPct(data.overall,2);
+  const d=document.getElementById("progressWeekDelta");d.textContent=progressDeltaText(data.delta);d.className=progressDeltaClass(data.delta);
+  document.getElementById("progressChangedBlocks").textContent=Number(data.changedBlocks||0);document.getElementById("progressChangedItems").textContent=Number(data.changedItems||0);
+  document.getElementById("progressSnapshotBtn").textContent=data.currentSnapshot?"📌 HAFTAYI YENİDEN KAYDET":"📌 HAFTAYI KAYDET";
+  document.getElementById("progressExportBtn").disabled=!data.currentSnapshot;
+  renderProgressSummary("progressCategorySummary",data.categories||[]);renderProgressSummary("progressContractorSummary",data.contractors||[]);
+  renderProgressContractorFilter(data.blocks||[]);renderProgressBlocks();renderProgressHistory(data.history||[]);
+}
+
+function renderProgressSummary(id,rows){
+  const el=document.getElementById(id);if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="office-empty">Veri yok.</div>';return;}
+  el.innerHTML=rows.map(x=>{const pct=Number(x.percent||0),delta=pct-Number(x.previousPercent||0);return `<div class="progress-summary-row">
+    <div class="name">${escapeHtml(x.name)} ${x.count?`<small>(${Number(x.count)} blok)</small>`:""}</div>
+    <div class="pct ${pct>100.01?"progress-over":""}">${progressPct(pct,1)}<br><small class="${progressDeltaClass(delta)}">${progressDeltaText(delta)}</small></div>
+    <div class="progress-mini-bar"><span style="width:${progressClampBar(pct)}%"></span></div></div>`;}).join("");
+}
+
+function renderProgressContractorFilter(blocks){
+  const el=document.getElementById("progressContractorFilter"),current=el.value;
+  const names=Array.from(new Set((blocks||[]).map(x=>x.contractor).filter(Boolean))).sort((a,b)=>a.localeCompare(b,"tr"));
+  el.innerHTML='<option value="">Tüm yükleniciler</option>'+names.map(x=>`<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`).join("");if(names.includes(current))el.value=current;
+}
+function filteredProgressBlocks(){
+  const data=loadProgressCache();if(!data)return [];let blocks=(data.blocks||[]).slice();
+  const q=normalizeOfficeSearchText(document.getElementById("progressBlockSearch").value),c=document.getElementById("progressContractorFilter").value;
+  if(c)blocks=blocks.filter(x=>x.contractor===c);if(q)blocks=blocks.filter(x=>normalizeOfficeSearchText(`${x.block} ${x.contractor} ${x.floorState}`).includes(q));
+  if(progressBlockFilter==="changed")blocks=blocks.filter(x=>Number(x.changedCount)>0);if(progressBlockFilter==="incomplete")blocks=blocks.filter(x=>Number(x.mechanical)<99.995);
+  return blocks.sort((a,b)=>(Number(b.changedCount)-Number(a.changedCount))||(Number(a.mechanical)-Number(b.mechanical))||String(a.block).localeCompare(String(b.block),"tr"));
+}
+function renderProgressBlocks(){
+  const el=document.getElementById("progressBlockList"),blocks=filteredProgressBlocks();if(!blocks.length){el.innerHTML='<div class="progress-empty">Bu filtrede blok bulunamadı.</div>';return;}
+  el.innerHTML=blocks.map(b=>`<button type="button" class="progress-block-card" data-progress-block="${escapeAttr(b.block)}">
+    <div class="progress-block-card-top"><div><h3>${escapeHtml(b.block)}</h3><div class="contractor">${escapeHtml(b.contractor)} · ${escapeHtml(b.floorState)}</div></div>
+    <div><div class="block-pct">${progressPct(b.mechanical,1)}</div><div class="block-delta ${progressDeltaClass(b.delta)}">${progressDeltaText(b.delta)}</div></div></div>
+    <div class="progress-bar"><span style="width:${progressClampBar(b.mechanical)}%"></span></div>
+    <div class="progress-block-card-bottom"><span>${Number(b.changedCount||0)} kalem bu hafta değişti</span><span>${Number(b.apartmentCount||0)} daire</span></div></button>`).join("");
+}
+function currentProgressBlock(){const d=loadProgressCache();return d&&d.blocks?d.blocks.find(x=>x.block===progressSelectedBlock):null;}
+function openProgressBlock(block){progressSelectedBlock=String(block||"");progressItemFilter="incomplete";document.querySelectorAll("[data-progress-item-filter]").forEach(x=>x.classList.toggle("active",x.dataset.progressItemFilter==="incomplete"));document.getElementById("progressItemSearch").value="";renderProgressBlock();showView("progressBlockView");}
+
+function renderProgressBlock(){
+  const data=loadProgressCache(),block=currentProgressBlock();if(!data||!block)return;const drafts=loadProgressDrafts(block.block),count=Object.keys(drafts).length;
+  document.getElementById("progressBlockTitle").textContent=`${block.block} İlerlemesi`;document.getElementById("progressBlockMeta").textContent=`${block.contractor} · ${block.floorState} · ${block.apartmentCount} daire`;
+  document.getElementById("progressBlockPct").textContent=progressPct(block.mechanical,1);
+  const d=document.getElementById("progressBlockDelta");d.textContent=progressDeltaText(block.delta);d.className=progressDeltaClass(block.delta);
+  document.getElementById("progressDraftCount").textContent=count;
+  const notice=document.getElementById("progressDraftNotice");notice.hidden=!count;if(count)notice.textContent=navigator.onLine?`${count} değişiklik taslak. Tek seferde kaydet.`:`${count} taslak telefonda güvende. İnternet gelince kaydet.`;
+  const save=document.getElementById("progressSaveChangesBtn");save.disabled=!count;save.textContent=count?`✓ ${count} DEĞİŞİKLİĞİ KAYDET`:"DEĞİŞİKLİK YOK";document.getElementById("progressDiscardDraftsBtn").disabled=!count;renderProgressItems();
+}
+function filteredProgressItems(){
+  const data=loadProgressCache(),block=currentProgressBlock();if(!data||!block)return [];const q=normalizeOfficeSearchText(document.getElementById("progressItemSearch").value),drafts=loadProgressDrafts(block.block);
+  return data.items.map((item,idx)=>{const raw=block.values[idx];if(raw===null||raw===undefined)return null;const current=drafts[item.id]?Number(drafts[item.id].value):Number(raw),previous=block.previousValues&&block.previousValues[idx]!==null&&block.previousValues[idx]!==undefined?Number(block.previousValues[idx]):Number(raw);return {item,current,previous,delta:(current-previous)*100,draft:Boolean(drafts[item.id])};})
+    .filter(Boolean).filter(x=>{if(q&&!normalizeOfficeSearchText(`${x.item.name} ${x.item.category}`).includes(q))return false;if(progressItemFilter==="changed"&&Math.abs(x.delta)<.005)return false;if(progressItemFilter==="complete"&&x.current<.9999)return false;if(progressItemFilter==="incomplete"&&x.current>=.9999)return false;return true;});
+}
+function renderProgressItems(){
+  const el=document.getElementById("progressItemGroups"),rows=filteredProgressItems();if(!rows.length){el.innerHTML='<div class="progress-empty">Bu filtrede imalat kalemi yok.</div>';return;}
+  const groups={};rows.forEach(x=>{(groups[x.item.category]??=[]).push(x)});const query=document.getElementById("progressItemSearch").value.trim();
+  el.innerHTML=Object.entries(groups).map(([cat,list],gi)=>{const avg=list.reduce((a,x)=>a+x.current,0)/list.length*100,complete=list.filter(x=>x.current>=.9999).length,open=(query||progressItemFilter==="changed"||gi===0)?" open":"";return `<details class="progress-category"${open}>
+    <summary><span class="cat-name">${escapeHtml(cat)}</span><span class="cat-meta"><strong>${progressPct(avg,0)}</strong>${complete}/${list.length} tamam</span></summary>
+    <div class="progress-category-list">${list.map(x=>`<button type="button" class="progress-item-row" data-progress-item="${escapeAttr(x.item.id)}"><div><div class="item-name">${escapeHtml(x.item.name)}</div><div class="item-sub"><span>Önceki ${progressPct(x.previous*100,0)}</span>${Math.abs(x.delta)>.005?`<span class="delta-badge ${progressDeltaClass(x.delta)}">${progressDeltaText(x.delta)}</span>`:""}${x.draft?'<span class="draft-badge">● TASLAK</span>':""}</div></div><div class="item-value">${progressPct(x.current*100,0)}</div></button>`).join("")}</div></details>`;}).join("");
+}
+function openProgressItemEditor(itemId){
+  const data=loadProgressCache(),block=currentProgressBlock();if(!data||!block)return;const idx=data.items.findIndex(x=>x.id===itemId);if(idx<0||block.values[idx]===null||block.values[idx]===undefined)return;
+  progressSelectedItemId=itemId;const item=data.items[idx],drafts=loadProgressDrafts(block.block),draft=drafts[itemId],current=draft?Number(draft.value):Number(block.values[idx]),previous=block.previousValues&&block.previousValues[idx]!==null&&block.previousValues[idx]!==undefined?Number(block.previousValues[idx]):Number(block.values[idx]);
+  document.getElementById("progressEditContext").textContent=`${block.block} · ${block.contractor} · ${item.category}`;document.getElementById("progressEditItemName").textContent=item.name;document.getElementById("progressEditPrevious").textContent=progressPct(previous*100,0);document.getElementById("progressEditNote").value=draft?String(draft.note||""):"";document.getElementById("progressRemoveDraftBtn").hidden=!draft;setProgressEditValue(current*100);showView("progressEditView");
+}
+function setProgressEditValue(v){
+  progressEditValue=Math.max(0,Math.min(100,Math.round(Number(v||0)/5)*5));document.getElementById("progressRange").value=progressEditValue;document.getElementById("progressEditBigValue").textContent=`%${progressEditValue}`;document.getElementById("progressEditCurrent").textContent=`%${progressEditValue}`;
+  document.querySelectorAll("[data-progress-preset]").forEach(x=>x.classList.toggle("selected",Number(x.dataset.progressPreset)===progressEditValue));
+  const data=loadProgressCache(),block=currentProgressBlock(),idx=data&&data.items?data.items.findIndex(x=>x.id===progressSelectedItemId):-1,original=idx>=0?Number(block.values[idx])*100:progressEditValue,w=document.getElementById("progressEditWarning");
+  if(progressEditValue<original){w.textContent="⚠️ Mevcut kayıt geriye düşüyor. Sebep notu zorunludur.";w.className="field-hint text-danger";}else{w.textContent="Değerler %5 adımlarla tutulur. Önce taslağa eklenir, blokta toplu kaydedilir.";w.className="field-hint";}
+}
+function addProgressDraft(){
+  const data=loadProgressCache(),block=currentProgressBlock();if(!data||!block)return;const idx=data.items.findIndex(x=>x.id===progressSelectedItemId),original=Number(block.values[idx]),value=progressEditValue/100,note=document.getElementById("progressEditNote").value.trim();
+  if(value<original-.00001&&note.length<3)return showToast("Geri düşüş için sebep notu yaz.");const map=loadProgressDrafts(block.block);
+  if(Math.abs(value-original)<.00001)delete map[progressSelectedItemId];else map[progressSelectedItemId]={itemId:progressSelectedItemId,value,note,originalValue:original,savedAt:new Date().toISOString()};
+  saveProgressDraftMap(block.block,map);renderProgressBlock();showView("progressBlockView");showToast(Math.abs(value-original)<.00001?"Taslak kaldırıldı.":"Değişiklik taslağa eklendi.");
+}
+function removeProgressDraft(){const b=currentProgressBlock();if(!b)return;const m=loadProgressDrafts(b.block);delete m[progressSelectedItemId];saveProgressDraftMap(b.block,m);renderProgressBlock();showView("progressBlockView");showToast("Taslak geri alındı.");}
+function discardProgressDrafts(){const b=currentProgressBlock();if(!b)return;const m=loadProgressDrafts(b.block),n=Object.keys(m).length;if(!n)return;if(!window.confirm(`${b.block} için ${n} taslak silinsin mi?`))return;clearProgressDraftMap(b.block);renderProgressBlock();showToast("Taslaklar silindi.");}
+async function saveProgressDrafts(){
+  if(progressSaveRunning)return;const s=loadOfficeSession(),b=currentProgressBlock();if(!s||!b)return;const changes=Object.values(loadProgressDrafts(b.block));if(!changes.length)return;if(!navigator.onLine)return showToast("İnternet yok. Taslaklar telefonda güvende.");
+  progressSaveRunning=true;const btn=document.getElementById("progressSaveChangesBtn");setButtonBusy(btn,true,"KAYDEDİLİYOR…");
+  try{const r=await apiPost(apiUrl(),{action:"progressUpdateBulk",officeUser:s.officeUser,token:s.token,block:b.block,changes},45000);if(!r.ok)throw new Error(r.error||"Kaydedilemedi.");clearProgressDraftMap(b.block);showToast(`${Number(r.changed||0)} kalem kaydedildi.`);await refreshProgressData(false);showView("progressBlockView");renderProgressBlock();}
+  catch(err){showToast("Kaydedilemedi: "+String(err.message||err));}finally{setButtonBusy(btn,false);progressSaveRunning=false;}
+}
+async function snapshotCurrentProgressWeek(){
+  if(progressSnapshotRunning)return;const s=loadOfficeSession(),d=loadProgressCache();if(!s||!d)return;if(!navigator.onLine)return showToast("Haftayı kaydetmek için internet gerekli.");
+  const draftBlocks=(d.blocks||[]).filter(b=>Object.keys(loadProgressDrafts(b.block)).length);if(draftBlocks.length)return showToast(`Önce ${draftBlocks.length} bloktaki taslakları kaydet veya sil.`);
+  const overwrite=Boolean(d.currentSnapshot),msg=overwrite?`${d.week.key} daha önce kaydedilmiş. Snapshot güncellensin mi?`:`${d.week.key} haftası snapshot olarak kaydedilsin mi?`;if(!window.confirm(msg))return;
+  progressSnapshotRunning=true;const btn=document.getElementById("progressSnapshotBtn");setButtonBusy(btn,true,"KAYDEDİLİYOR…");
+  try{const r=await apiPost(apiUrl(),{action:"progressSnapshot",officeUser:s.officeUser,token:s.token,overwrite},60000);if(!r.ok)throw new Error(r.error||"Hafta kaydedilemedi.");showToast(`${r.weekKey} haftası kaydedildi.`);await refreshProgressData(false);}
+  catch(err){showToast("Hafta kaydedilemedi: "+String(err.message||err));}finally{setButtonBusy(btn,false);progressSnapshotRunning=false;}
+}
+function renderProgressHistory(history){
+  const el=document.getElementById("progressHistoryList");if(!history.length){el.innerHTML='<div class="office-empty">Henüz snapshot yok.</div>';return;}
+  el.innerHTML=history.map((x,i)=>{const next=history[i+1],delta=next?Number(x.overall||0)-Number(next.overall||0):0;return `<div class="progress-history-row"><div class="info"><strong>${escapeHtml(x.weekKey)} · ${progressPct(x.overall,2)}</strong><small>${x.snapshotAt?new Date(x.snapshotAt).toLocaleDateString("tr-TR"):""} ${next?`· ${progressDeltaText(delta)}`:"· Başlangıç"}</small></div><button type="button" class="small-btn" data-progress-export-week="${escapeAttr(x.weekKey)}">Excel</button></div>`;}).join("");
+}
+function base64ToDownload(base64,fileName,mime){const bin=atob(base64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const blob=new Blob([bytes],{type:mime||"application/octet-stream"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=fileName||"rapor.xlsx";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
+async function exportProgressWeek(weekKey=""){
+  if(progressExportRunning)return;const s=loadOfficeSession(),d=loadProgressCache();if(!s||!d)return;const target=weekKey||d.week.key;if(!(d.history||[]).some(x=>x.weekKey===target))return showToast("Önce bu haftayı kaydet.");if(!navigator.onLine)return showToast("Excel raporu için internet gerekli.");
+  progressExportRunning=true;const btn=weekKey?null:document.getElementById("progressExportBtn");if(btn)setButtonBusy(btn,true,"HAZIRLANIYOR…");showToast(`${target} Excel raporu hazırlanıyor…`);
+  try{const r=await apiPost(apiUrl(),{action:"progressExport",officeUser:s.officeUser,token:s.token,weekKey:target},120000);if(!r.ok)throw new Error(r.error||"Excel oluşturulamadı.");base64ToDownload(r.base64,r.fileName,r.mime);showToast("Excel raporu hazır.");}
+  catch(err){showToast("Excel raporu alınamadı: "+String(err.message||err));}finally{if(btn)setButtonBusy(btn,false);progressExportRunning=false;}
+}
 
 /* ---------- MECHANICAL OFFICE ---------- */
 function saveOfficeSession(session,remember){

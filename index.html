@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v5.1</span>
+  <span id="versionLabel" class="version">v5.2</span>
 </header>
 
 <main class="container">
@@ -268,6 +268,15 @@
       <div class="office-kpi"><strong id="officeAvgClose">—</strong><span>Ort. Kapanma</span></div>
     </div>
 
+    <button id="progressOpenBtn" type="button" class="office-module-btn progress-module-btn">
+      <span class="module-icon">📈</span>
+      <span class="module-copy">
+        <strong>HAFTALIK İLERLEME</strong>
+        <small>Blok ve imalat seviyelerini güncelle · haftayı kaydet · Excel raporu al</small>
+      </span>
+      <span class="module-arrow">›</span>
+    </button>
+
     <div class="dashboard-section">
       <div class="dashboard-head">
         <h3>Taşeron Durumu</h3>
@@ -341,6 +350,147 @@
     </div>
 
     <div id="officeIssueList" class="card-list"></div>
+  </section>
+
+  <section id="progressView" class="view scroll-view">
+    <div class="section-head">
+      <button id="progressBackBtn" class="back-btn" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2>Haftalık İlerleme</h2>
+        <p id="progressStatus" class="subtitle">Genel merkez seviye tablosu</p>
+      </div>
+      <button id="progressRefreshBtn" class="small-btn">↻ Yenile</button>
+    </div>
+
+    <div class="progress-week-card">
+      <div>
+        <span class="progress-eyebrow">ÇALIŞILAN HAFTA</span>
+        <strong id="progressWeekLabel">—</strong>
+        <small id="progressBaselineLabel">Karşılaştırma: —</small>
+      </div>
+      <div class="progress-week-actions">
+        <button id="progressSnapshotBtn" type="button" class="small-action">📌 HAFTAYI KAYDET</button>
+        <button id="progressExportBtn" type="button" class="small-action">⬇️ EXCEL RAPORU</button>
+      </div>
+    </div>
+
+    <div class="progress-kpi-grid">
+      <div class="progress-kpi primary"><strong id="progressOverallPct">—</strong><span>Genel Mekanik</span><small>GM hesabı</small></div>
+      <div class="progress-kpi"><strong id="progressWeekDelta">—</strong><span>Haftalık Fark</span><small>önceki snapshot</small></div>
+      <div class="progress-kpi"><strong id="progressChangedBlocks">0</strong><span>Değişen Blok</span><small>bu hafta</small></div>
+      <div class="progress-kpi"><strong id="progressChangedItems">0</strong><span>Değişen Kalem</span><small>bu hafta</small></div>
+    </div>
+
+    <div class="progress-summary-grid">
+      <div class="dashboard-section">
+        <div class="dashboard-head"><h3>Sistem Özeti</h3><span>İlerleme</span></div>
+        <div id="progressCategorySummary" class="progress-summary-list"></div>
+      </div>
+      <div class="dashboard-section">
+        <div class="dashboard-head"><h3>Yüklenici Özeti</h3><span>Blok ort.</span></div>
+        <div id="progressContractorSummary" class="progress-summary-list"></div>
+      </div>
+    </div>
+
+    <div class="progress-block-head">
+      <div>
+        <h3>Bloklar</h3>
+        <p class="subtitle">Bir blok seç; yalnız o bloğun geçerli imalatları açılır.</p>
+      </div>
+    </div>
+
+    <div class="progress-filter-card">
+      <input id="progressBlockSearch" type="search" autocomplete="off" enterkeyhint="search" placeholder="Blok veya yüklenici ara…">
+      <select id="progressContractorFilter"><option value="">Tüm yükleniciler</option></select>
+      <div id="progressBlockFilterBar" class="filter-bar compact-filter-bar">
+        <button type="button" class="filter-chip active" data-progress-block-filter="all">Tümü</button>
+        <button type="button" class="filter-chip" data-progress-block-filter="changed">Bu Hafta Değişen</button>
+        <button type="button" class="filter-chip" data-progress-block-filter="incomplete">%100 Altı</button>
+      </div>
+    </div>
+
+    <div id="progressBlockList" class="progress-block-list"></div>
+
+    <div class="dashboard-section progress-history-section">
+      <div class="dashboard-head"><h3>Hafta Geçmişi</h3><span>Snapshot</span></div>
+      <div id="progressHistoryList" class="progress-history-list"></div>
+    </div>
+  </section>
+
+  <section id="progressBlockView" class="view scroll-view">
+    <div class="section-head">
+      <button id="progressBlockBackBtn" class="back-btn" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2 id="progressBlockTitle">Blok İlerlemesi</h2>
+        <p id="progressBlockMeta" class="subtitle"></p>
+      </div>
+    </div>
+
+    <div class="progress-block-kpis">
+      <div><strong id="progressBlockPct">—</strong><span>GM Mekanik</span></div>
+      <div><strong id="progressBlockDelta">—</strong><span>Haftalık Fark</span></div>
+      <div><strong id="progressDraftCount">0</strong><span>Taslak Değişiklik</span></div>
+    </div>
+
+    <div id="progressDraftNotice" class="progress-draft-notice" hidden></div>
+
+    <div class="progress-item-tools">
+      <input id="progressItemSearch" type="search" autocomplete="off" enterkeyhint="search" placeholder="İmalat kalemi ara…">
+      <div id="progressItemFilterBar" class="filter-bar compact-filter-bar">
+        <button type="button" class="filter-chip active" data-progress-item-filter="incomplete">Eksikler</button>
+        <button type="button" class="filter-chip" data-progress-item-filter="changed">Bu Hafta Değişen</button>
+        <button type="button" class="filter-chip" data-progress-item-filter="complete">Tamamlanan</button>
+        <button type="button" class="filter-chip" data-progress-item-filter="all">Tümü</button>
+      </div>
+    </div>
+
+    <div id="progressItemGroups" class="progress-item-groups"></div>
+
+    <div class="progress-save-bar">
+      <button id="progressDiscardDraftsBtn" type="button" class="small-action danger-outline">Taslakları Sil</button>
+      <button id="progressSaveChangesBtn" type="button" class="submit-btn success-action">DEĞİŞİKLİKLERİ KAYDET</button>
+    </div>
+  </section>
+
+  <section id="progressEditView" class="view scroll-view">
+    <div class="section-head">
+      <button id="progressEditBackBtn" class="back-btn" aria-label="Geri">←</button>
+      <div class="grow">
+        <h2>İmalat Seviyesi</h2>
+        <p id="progressEditContext" class="subtitle"></p>
+      </div>
+    </div>
+
+    <div class="progress-edit-card">
+      <h3 id="progressEditItemName">—</h3>
+      <div class="progress-edit-compare">
+        <div><span>Önceki Hafta</span><strong id="progressEditPrevious">—</strong></div>
+        <div><span>Mevcut / Taslak</span><strong id="progressEditCurrent">—</strong></div>
+      </div>
+
+      <div class="progress-preset-grid">
+        <button type="button" data-progress-preset="0">%0</button>
+        <button type="button" data-progress-preset="25">%25</button>
+        <button type="button" data-progress-preset="50">%50</button>
+        <button type="button" data-progress-preset="75">%75</button>
+        <button type="button" data-progress-preset="100">%100</button>
+      </div>
+
+      <div class="progress-step-row">
+        <button id="progressMinusBtn" type="button">− %5</button>
+        <div id="progressEditBigValue">%0</div>
+        <button id="progressPlusBtn" type="button">+ %5</button>
+      </div>
+
+      <input id="progressRange" type="range" min="0" max="100" step="5" value="0">
+
+      <label for="progressEditNote">Not <span class="optional">(isteğe bağlı)</span></label>
+      <textarea id="progressEditNote" rows="3" maxlength="160" placeholder="Örn: 3. bodrum tamamlandı. Geri düşüş varsa sebep zorunlu."></textarea>
+      <p id="progressEditWarning" class="field-hint"></p>
+
+      <button id="progressAddDraftBtn" type="button" class="submit-btn">✓ TASLAĞA EKLE</button>
+      <button id="progressRemoveDraftBtn" type="button" class="submit-btn secondary-action" hidden>TASLAĞI GERİ AL</button>
+    </div>
   </section>
 
   <section id="officeDetailView" class="view scroll-view">
