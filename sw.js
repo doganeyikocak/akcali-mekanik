@@ -1,4 +1,4 @@
-const CACHE="akcali-mekanik-v5-0";
+const CACHE="akcali-mekanik-v5-1";
 const ASSETS=[
   "./",
   "./index.html",

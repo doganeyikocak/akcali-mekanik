@@ -20,7 +20,7 @@
     <h1>Akçalı Mekanik</h1>
     <p id="connectionStatus" class="status offline">Bağlantı kontrol ediliyor…</p>
   </div>
-  <span id="versionLabel" class="version">v5.0</span>
+  <span id="versionLabel" class="version">v5.1</span>
 </header>
 
 <main class="container">
@@ -288,12 +288,53 @@
     </div>
 
     <div class="office-work-head">
-      <h3>Saha İşleri</h3>
+      <div>
+        <h3>Saha İşleri</h3>
+        <p class="subtitle">Kayıt ara ve sahadaki açık işleri süz.</p>
+      </div>
       <button id="refreshOfficeBtn" class="small-btn">↻ Yenile</button>
     </div>
 
+    <div class="office-search-panel">
+      <label for="officeSearchInput">Hızlı Arama</label>
+      <div class="office-search-row">
+        <input id="officeSearchInput" type="search" enterkeyhint="search" autocomplete="off"
+          placeholder="Kayıt no, mahal, açıklama, taşeron, formen…">
+        <button id="officeSearchClearBtn" type="button" class="office-search-clear" aria-label="Aramayı temizle">×</button>
+      </div>
+
+      <div class="office-filter-grid">
+        <div>
+          <label for="officeFilterContractor">Taşeron</label>
+          <select id="officeFilterContractor"><option value="">Tüm taşeronlar</option></select>
+        </div>
+        <div>
+          <label for="officeFilterBlock">Blok</label>
+          <select id="officeFilterBlock"><option value="">Tüm bloklar</option></select>
+        </div>
+        <div>
+          <label for="officeFilterStatus">Durum</label>
+          <select id="officeFilterStatus"><option value="">Tüm durumlar</option></select>
+        </div>
+        <div>
+          <label for="officeFilterPriority">Öncelik</label>
+          <select id="officeFilterPriority"><option value="">Tüm öncelikler</option></select>
+        </div>
+        <div class="office-filter-wide">
+          <label for="officeFilterIssueType">Hata Türü</label>
+          <select id="officeFilterIssueType"><option value="">Tüm hata türleri</option></select>
+        </div>
+      </div>
+
+      <div class="office-filter-footer">
+        <span id="officeResultCount" class="office-result-count">0 kayıt</span>
+        <button id="officeClearFiltersBtn" type="button" class="small-btn danger-outline">Filtreleri Temizle</button>
+      </div>
+    </div>
+
+    <div class="office-quick-filter-title">Hızlı Filtre</div>
     <div id="officeFilterBar" class="filter-bar">
-      <button type="button" class="filter-chip active" data-office-filter="all">Tümü</button>
+      <button type="button" class="filter-chip active" data-office-filter="all">Açıkların Tümü</button>
       <button type="button" class="filter-chip" data-office-filter="waiting">Kontrol Bekliyor</button>
       <button type="button" class="filter-chip" data-office-filter="overdue">Gecikmiş</button>
       <button type="button" class="filter-chip" data-office-filter="critical">Kritik / Yüksek</button>

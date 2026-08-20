@@ -495,3 +495,102 @@ button.office-kpi:active{transform:scale(.985)}
   .office-kpi span{font-size:10px}
   .office-card-meta{grid-template-columns:1fr}
 }
+
+
+/* ===== v5.1 Mekanik Ofis Arama / Filtreleme ===== */
+.office-search-panel{
+  margin:12px 0 10px;
+  padding:12px;
+  border:1px solid #D7DEE5;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 3px 14px rgba(23,50,77,.05);
+  min-width:0;
+}
+.office-search-panel > label,
+.office-filter-grid label{
+  display:block;
+  margin:0 0 6px;
+  font-size:13px;
+  font-weight:850;
+  color:#314A60;
+}
+.office-search-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.office-search-row input{
+  flex:1 1 auto;
+  min-width:0;
+  margin:0;
+}
+.office-search-clear{
+  flex:0 0 46px;
+  width:46px;
+  height:46px;
+  border:1px solid #CCD5DE;
+  border-radius:11px;
+  background:#F5F7F9;
+  color:#43576B;
+  font-size:27px;
+  font-weight:700;
+  line-height:1;
+  touch-action:manipulation;
+}
+.office-search-clear:active{transform:scale(.97)}
+.office-filter-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:12px;
+  min-width:0;
+}
+.office-filter-grid > div{min-width:0}
+.office-filter-grid select{
+  width:100%;
+  min-width:0;
+  margin:0;
+  font-size:15px;
+}
+.office-filter-wide{grid-column:1 / -1}
+.office-filter-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:12px;
+  min-width:0;
+}
+.office-result-count{
+  min-width:0;
+  font-size:13px;
+  line-height:1.3;
+  font-weight:850;
+  color:#40566B;
+  overflow-wrap:anywhere;
+}
+.office-quick-filter-title{
+  margin:10px 2px 6px;
+  color:#607080;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.office-filter-active{
+  box-shadow:0 0 0 2px rgba(23,50,77,.08);
+}
+.office-empty .clear-filter-inline{
+  margin-top:12px;
+}
+@media(max-width:380px){
+  .office-filter-grid{grid-template-columns:1fr}
+  .office-filter-wide{grid-column:auto}
+  .office-filter-footer{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .office-filter-footer .small-btn{width:100%}
+}

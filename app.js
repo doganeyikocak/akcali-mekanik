@@ -1,4 +1,4 @@
-const APP_VERSION="5.0.0";
+const APP_VERSION="5.1.0";
 const DEFAULT_API_URL="https://script.google.com/macros/s/AKfycbzYzHuDIT90xjLz8nx04ivTzd0RLBLRHinKOSXdcafEUQ076wXfnvKknY6ootx-SgaB/exec";
 const DEFAULTS={
   blocks:["A Blok","B Blok","C Blok","D Blok"],
@@ -32,6 +32,15 @@ let officeRefreshRunning=false;
 let officeDecisionRunning=false;
 let officeCurrentFilter="all";
 let officeCurrentIssue=null;
+let officeFilterSearchTimer=null;
+const officeFilterState={
+  query:"",
+  contractor:"",
+  block:"",
+  status:"",
+  priority:"",
+  issueType:""
+};
 let photoProcessing=false;
 let correctionPhotoProcessing=false;
 const securePhotoCache=new Map();
@@ -39,7 +48,7 @@ const SECURE_PHOTO_CACHE_LIMIT=12;
 
 
 document.addEventListener("DOMContentLoaded",async()=>{
-  document.getElementById("versionLabel").textContent="v5.0";
+  document.getElementById("versionLabel").textContent="v5.1";
 
   // Arayüz dinleyicilerini önce bağla: kullanıcı dokununca ağ/DB beklemeden ekran tepki versin.
   bindNavigation();
@@ -265,6 +274,30 @@ function bindButtons(){
   document.getElementById("officeLoginBtn").onclick=officeLogin;
   document.getElementById("officeLogoutBtn").onclick=officeLogout;
   document.getElementById("refreshOfficeBtn").onclick=()=>refreshOfficeDashboard(true);
+  document.getElementById("officeSearchInput").addEventListener("input",e=>{
+    officeFilterState.query=e.target.value||"";
+    clearTimeout(officeFilterSearchTimer);
+    officeFilterSearchTimer=setTimeout(()=>renderOfficeIssues(getCachedOfficeIssues()),90);
+  });
+  document.getElementById("officeSearchClearBtn").onclick=()=>{
+    document.getElementById("officeSearchInput").value="";
+    officeFilterState.query="";
+    renderOfficeIssues(getCachedOfficeIssues());
+    document.getElementById("officeSearchInput").focus();
+  };
+  [
+    ["officeFilterContractor","contractor"],
+    ["officeFilterBlock","block"],
+    ["officeFilterStatus","status"],
+    ["officeFilterPriority","priority"],
+    ["officeFilterIssueType","issueType"]
+  ].forEach(([id,key])=>{
+    document.getElementById(id).addEventListener("change",e=>{
+      officeFilterState[key]=e.target.value||"";
+      renderOfficeIssues(getCachedOfficeIssues());
+    });
+  });
+  document.getElementById("officeClearFiltersBtn").onclick=clearOfficeFilters;
   document.getElementById("officeDetailBackBtn").onclick=()=>showView("officePanelView");
   document.getElementById("officeDecisionTerm").addEventListener("change",updateOfficeDuePreview);
   document.getElementById("officeCloseBtn").onclick=()=>officeDecision("close");
@@ -316,7 +349,7 @@ function bindButtons(){
   document.querySelectorAll("[data-office-filter]").forEach(btn=>{
     btn.addEventListener("click",()=>{
       officeCurrentFilter=btn.dataset.officeFilter||"all";
-      document.querySelectorAll("#officeFilterBar [data-office-filter]").forEach(x=>x.classList.toggle("active",x.dataset.officeFilter===officeCurrentFilter));
+      updateOfficeQuickFilterUi();
       renderOfficeIssues(getCachedOfficeIssues());
       const list=document.getElementById("officeIssueList");
       if(list)list.scrollIntoView({block:"start",behavior:"auto"});
@@ -1294,7 +1327,10 @@ function renderOfficeData(data,statusText){
   renderDashboardRows("officeContractorBreakdown",d.contractorBreakdown||[],"contractor");
   renderDashboardRows("officeBlockBreakdown",d.byBlock||[],"simple");
   renderDashboardRows("officeIssueBreakdown",d.byIssue||[],"simple");
-  renderOfficeIssues((data&&data.issues)||[]);
+
+  const officeIssues=(data&&data.issues)||[];
+  renderOfficeFilterOptions(officeIssues);
+  renderOfficeIssues(officeIssues);
 }
 
 function renderDashboardRows(id,rows,type){
@@ -1317,21 +1353,184 @@ function renderDashboardRows(id,rows,type){
   }).join("");
 }
 
-function officeFilteredIssues(issues){
+function normalizeOfficeSearchText(value){
+  return String(value??"")
+    .toLocaleLowerCase("tr-TR")
+    .replaceAll("ı","i")
+    .replaceAll("ğ","g")
+    .replaceAll("ü","u")
+    .replaceAll("ş","s")
+    .replaceAll("ö","o")
+    .replaceAll("ç","c")
+    .replace(/\s+/g," ")
+    .trim();
+}
+
+function officeUniqueSorted(values){
+  return Array.from(new Set(
+    (values||[]).map(x=>String(x??"").trim()).filter(Boolean)
+  )).sort((a,b)=>a.localeCompare(b,"tr",{sensitivity:"base"}));
+}
+
+function setOfficeFilterOptions(id,values,placeholder,stateKey){
+  const el=document.getElementById(id);
+  if(!el)return;
+
+  const current=officeFilterState[stateKey]||"";
+  const options=officeUniqueSorted(values);
+  el.innerHTML=`<option value="">${escapeHtml(placeholder)}</option>`+
+    options.map(x=>`<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`).join("");
+
+  if(current && options.includes(current)){
+    el.value=current;
+  }else{
+    officeFilterState[stateKey]="";
+    el.value="";
+  }
+}
+
+function renderOfficeFilterOptions(issues){
   const list=Array.isArray(issues)?issues:[];
-  if(officeCurrentFilter==="waiting")return list.filter(x=>x.status==="Kontrol Bekliyor");
-  if(officeCurrentFilter==="overdue")return list.filter(x=>Number(x.overdueDays)>0);
-  if(officeCurrentFilter==="critical")return list.filter(x=>["Kritik","Yüksek"].includes(x.priority));
+  setOfficeFilterOptions("officeFilterContractor",list.map(x=>x.contractor),"Tüm taşeronlar","contractor");
+  setOfficeFilterOptions("officeFilterBlock",list.map(x=>x.block),"Tüm bloklar","block");
+  setOfficeFilterOptions("officeFilterStatus",list.map(x=>x.status),"Tüm durumlar","status");
+  setOfficeFilterOptions("officeFilterPriority",list.map(x=>x.priority),"Tüm öncelikler","priority");
+  setOfficeFilterOptions("officeFilterIssueType",list.map(x=>x.issueType),"Tüm hata türleri","issueType");
+
+  const search=document.getElementById("officeSearchInput");
+  if(search && search.value!==officeFilterState.query)search.value=officeFilterState.query;
+  updateOfficeFilterUi();
+}
+
+function officeAdvancedFilterCount(){
+  return [
+    officeFilterState.query,
+    officeFilterState.contractor,
+    officeFilterState.block,
+    officeFilterState.status,
+    officeFilterState.priority,
+    officeFilterState.issueType
+  ].filter(Boolean).length;
+}
+
+function updateOfficeQuickFilterUi(){
+  document.querySelectorAll("#officeFilterBar [data-office-filter]").forEach(x=>{
+    x.classList.toggle("active",x.dataset.officeFilter===officeCurrentFilter);
+  });
+}
+
+function updateOfficeFilterUi(){
+  const panel=document.querySelector(".office-search-panel");
+  if(panel)panel.classList.toggle("office-filter-active",officeAdvancedFilterCount()>0);
+  updateOfficeQuickFilterUi();
+}
+
+function clearOfficeFilters(){
+  officeCurrentFilter="all";
+  Object.keys(officeFilterState).forEach(k=>officeFilterState[k]="");
+
+  const search=document.getElementById("officeSearchInput");
+  if(search)search.value="";
+
+  [
+    "officeFilterContractor",
+    "officeFilterBlock",
+    "officeFilterStatus",
+    "officeFilterPriority",
+    "officeFilterIssueType"
+  ].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.value="";
+  });
+
+  updateOfficeFilterUi();
+  renderOfficeIssues(getCachedOfficeIssues());
+  showToast("Filtreler temizlendi.");
+}
+
+function officeFilteredIssues(issues){
+  let list=Array.isArray(issues)?issues.slice():[];
+
+  if(officeCurrentFilter==="waiting"){
+    list=list.filter(x=>x.status==="Kontrol Bekliyor");
+  }else if(officeCurrentFilter==="overdue"){
+    list=list.filter(x=>Number(x.overdueDays)>0);
+  }else if(officeCurrentFilter==="critical"){
+    list=list.filter(x=>["Kritik","Yüksek"].includes(x.priority));
+  }
+
+  if(officeFilterState.contractor){
+    list=list.filter(x=>x.contractor===officeFilterState.contractor);
+  }
+  if(officeFilterState.block){
+    list=list.filter(x=>x.block===officeFilterState.block);
+  }
+  if(officeFilterState.status){
+    list=list.filter(x=>x.status===officeFilterState.status);
+  }
+  if(officeFilterState.priority){
+    list=list.filter(x=>x.priority===officeFilterState.priority);
+  }
+  if(officeFilterState.issueType){
+    list=list.filter(x=>x.issueType===officeFilterState.issueType);
+  }
+
+  const query=normalizeOfficeSearchText(officeFilterState.query);
+  if(query){
+    const terms=query.split(" ").filter(Boolean);
+    list=list.filter(x=>{
+      const haystack=normalizeOfficeSearchText([
+        x.recordId,
+        x.reporter,
+        x.block,
+        x.floor,
+        x.location,
+        x.issueType,
+        x.note,
+        x.contractor,
+        x.foreman,
+        x.priority,
+        x.status,
+        x.correctionNote
+      ].join(" | "));
+      return terms.every(term=>haystack.includes(term));
+    });
+  }
+
   return list;
+}
+
+function renderOfficeResultCount(filteredCount,totalCount){
+  const el=document.getElementById("officeResultCount");
+  if(!el)return;
+
+  const advanced=officeAdvancedFilterCount();
+  const quick=officeCurrentFilter!=="all"?1:0;
+  const active=advanced+quick;
+
+  el.textContent=active
+    ? `${filteredCount} / ${totalCount} kayıt · ${active} filtre aktif`
+    : `${totalCount} açık kayıt`;
 }
 
 function renderOfficeIssues(issues){
   const list=document.getElementById("officeIssueList");
   if(!list)return;
-  const filtered=officeFilteredIssues(issues);
+
+  const source=Array.isArray(issues)?issues:[];
+  const filtered=officeFilteredIssues(source);
+  renderOfficeResultCount(filtered.length,source.length);
+  updateOfficeFilterUi();
 
   if(!filtered.length){
-    list.innerHTML='<div class="card office-empty">Bu filtrede açık iş yok.</div>';
+    list.innerHTML=`<div class="card office-empty">
+      Arama / filtre sonucunda kayıt bulunamadı.
+      <div class="clear-filter-inline">
+        <button type="button" class="small-btn" data-office-empty-clear="1">Filtreleri Temizle</button>
+      </div>
+    </div>`;
+    const clearBtn=list.querySelector("[data-office-empty-clear]");
+    if(clearBtn)clearBtn.onclick=clearOfficeFilters;
     return;
   }
 
